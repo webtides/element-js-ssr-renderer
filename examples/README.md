@@ -9,7 +9,7 @@ Shadow DOM (and light DOM), then hydrates them in the browser.
 | ---------- | ------------------------ | ----------- | ------------------------------------ |
 | Astro      | [`astro/`](./astro)      | ✅ available | `onRequest` middleware (`elementSSR`) |
 | Nuxt       | `nuxt/`                  | 🛠 planned   | Nitro `render:response` hook         |
-| SvelteKit  | `sveltekit/`             | 🛠 planned   | `handle` hook (`transformPageChunk`)  |
+| SvelteKit  | [`sveltekit/`](./sveltekit) | ✅ available | `handle` hook (`transformPageChunk`)  |
 
 Each example is **fully self-contained** — its own `package.json`, its own copy of the
 local components, its own framework wiring — so it doubles as a copy-pasteable blueprint.
@@ -53,7 +53,7 @@ it for you, published as a stable subpath export and living under
 | -------------- | ----------- | ------------------------------------------------------------------------ |
 | `…/astro`      | ✅ available | `elementSSR(options)` → an `onRequest` middleware                        |
 | `…/nuxt`       | 🛠 planned   | a Nitro hook / plugin (lands with `examples/nuxt`)                       |
-| `…/sveltekit`  | 🛠 planned   | a `handle` helper (lands with `examples/sveltekit`)                      |
+| `…/sveltekit`  | ✅ available | `elementSSR(options)` → a `handle` hook (`transformPageChunk`)           |
 
 Adapters that deal in `Response` objects (Astro, Nuxt) share one internal kernel,
 [`transformHtmlResponse`](../src/adapters/transform-response.js) — content-type gate, read the

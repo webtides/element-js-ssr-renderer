@@ -21,6 +21,15 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-03 — SvelteKit example + `./sveltekit` adapter (T-011)
+
+**Tasks:** T-011
+
+- Added `src/adapters/sveltekit.js` (`elementSSR(options)` → a SvelteKit `handle` hook), exported as `./sveltekit`. SvelteKit's `transformPageChunk` hands over the rendered HTML **string** (not a `Response`), so the adapter skips the `transformHtmlResponse` kernel and calls `renderToStringAsync` directly — buffering every chunk and transforming the whole document once on the final (`done`) chunk, returning `""` for earlier chunks to preserve order. Covered by `test/sveltekit.test.js` (static registry, lazy resolve loads once, and a split-across-chunks buffering case); full suite green at 41 tests.
+- Added the runnable example under `examples/sveltekit/` (`@sveltejs/adapter-node`): `hooks.server.js` imports the DOM shim first then composes an eager element-library `registry` with `lazy(import.meta.glob("./components/*.js"))`; reuses the Astro `x-counter`/`x-greeting` components verbatim for parity. Global styles/tokens live in `app.html` (plain CSS the renderer can adopt into shadow roots, since Svelte component `<style>` is scoped); client hydration loads each `define` from `+layout.svelte`'s `onMount`. `vite.config.js` sets `ssr.noExternal` for the element-js packages — the same import-order fix as the Astro example.
+- Verified end-to-end: `npm run build && node build`, fetched `/` → 9 `<template shadowrootmode="open">` blocks, seeded `count="3"` rendered (`Apples: 3`), light-DOM greeting in place, both component-own and adopted global styles inlined per shadow root, hydration markers present.
+- Flipped the `examples/README.md` + package README adapter/status tables to "available" and added a `## SvelteKit` README section mirroring `## Astro`. `vite-plugin-svelte` does not export `sveltekit`; the Vite plugin comes from `@sveltejs/kit/vite`.
+
 ## 2026-06-03 — Group framework adapters under src/adapters
 
 **Tasks:** — (prep for T-010 / T-011)

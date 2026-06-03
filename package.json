@@ -12,6 +12,7 @@
     ".": "./src/index.js",
     "./dom-shim": "./src/dom-shim.js",
     "./astro": "./src/adapters/astro.js",
+    "./sveltekit": "./src/adapters/sveltekit.js",
     "./resolve/node": "./src/resolve/node.js"
   },
   "files": [

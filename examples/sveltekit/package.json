@@ -1,0 +1,24 @@
+{
+  "name": "element-js-ssr-renderer-sveltekit-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Runnable SvelteKit example for @webtides/element-js-ssr-renderer — SSRs element-js custom elements (local + element-library) to Declarative Shadow DOM, then hydrates them in the browser.",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "node build"
+  },
+  "dependencies": {
+    "@webtides/element-js": "^1.2.11",
+    "@webtides/element-js-ssr-renderer": "file:../..",
+    "@webtides/element-library": "file:../../../element-library"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "^5.0.0",
+    "@sveltejs/kit": "^2.0.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "svelte": "^5.0.0",
+    "vite": "^6.0.0"
+  }
+}
