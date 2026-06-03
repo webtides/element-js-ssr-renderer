@@ -1,0 +1,34 @@
+{
+  "name": "@webtides/element-js-ssr-renderer",
+  "version": "0.0.1",
+  "description": "Server-side rendering for @webtides/element-js custom elements. Recursively pre-renders custom elements in an HTML string — emitting Declarative Shadow DOM for shadow components — so they hydrate in the browser instead of rendering from scratch.",
+  "type": "module",
+  "license": "MIT",
+  "repository": "https://github.com/webtides/element-js-ssr-renderer",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./dom-shim": "./src/dom-shim.js",
+    "./astro": "./src/astro.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "node-html-parser": "^7.0.1"
+  },
+  "peerDependencies": {
+    "@webtides/element-js": ">=1.2.11"
+  },
+  "devDependencies": {
+    "@webtides/element-js": "^1.2.11",
+    "@webtides/element-library": "file:../element-library",
+    "vitest": "^4.0.0"
+  }
+}
