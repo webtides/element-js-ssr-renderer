@@ -158,6 +158,9 @@ function isEmptyTemplate(markup) {
  * @property {Registry} registry
  * @property {{ node: import('node-html-parser').HTMLElement, html: string }[]} globalStyles
  * @property {Set<string>} lightStyleIds - ids of light-DOM `<style>`s already emitted, document-wide
+ * @property {(tag: string) => void} [onUnresolved] - called with each custom-element-looking tag
+ *   (contains `-`) that isn't in `registry`. The async resolver uses this to discover which tags to
+ *   load; it also backs the dev-mode "unregistered tag" warning (T-008.6).
  */
 
 /**
@@ -221,8 +224,61 @@ function transformNode(node, ctx) {
       }
     }
 
+    // Reached for plain tags, registered wrappers with an empty template, and unresolved custom
+    // elements. Only the last — a hyphenated tag with no constructor — is reported as unresolved.
+    if (!Constructor && tag?.includes("-")) ctx.onUnresolved?.(tag);
     transformNode(child, ctx);
   }
+}
+
+/** Whether we're in a production build, so the dev-only unresolved-tag warning stays quiet. */
+function isProduction() {
+  // `process` is absent on some edge runtimes; bundlers (Vite/Rollup) inline the value in prod.
+  return typeof process !== "undefined" && process.env?.NODE_ENV === "production";
+}
+
+/**
+ * The default `onUnresolved` handler: warn once per distinct tag, in non-production only. Catches the
+ * "forgot to register / typo'd the tag" case that otherwise passes through silently (T-008.6).
+ * Returns `undefined` in production so the hook is skipped entirely. Pass your own `onUnresolved`
+ * (e.g. `() => {}`) to override or silence — useful for intentionally client-only / third-party tags.
+ * @return {((tag: string) => void) | undefined}
+ */
+function defaultUnresolvedWarning() {
+  if (isProduction()) return undefined;
+  const warned = new Set();
+  return (tag) => {
+    if (warned.has(tag)) return;
+    warned.add(tag);
+    console.warn(
+      `[element-js-ssr-renderer] No server component resolved for <${tag}> — left ` +
+        `unrendered (it will still hydrate client-side if defined there). Add it to your ` +
+        `registry / resolve sources, or pass onUnresolved to silence.`,
+    );
+  };
+}
+
+/**
+ * Parse `html`, pre-render every custom element found in `registry`, and stringify. Shared by the
+ * sync and async entry points; pure over (`html`, `registry`), so the async path can call it
+ * repeatedly with a growing registry (see `renderToStringAsync`).
+ * @param {string} html
+ * @param {Registry} registry
+ * @param {(tag: string) => void} [onUnresolved]
+ * @return {string}
+ */
+function runTransform(html, registry, onUnresolved) {
+  const root = parse(html, PARSE_OPTIONS);
+  // Collect global styles up front, before any generated shadow templates are spliced in, so we
+  // only ever adopt the input document's own stylesheets.
+  const globalStyles = collectGlobalStyles(root);
+  transformNode(root, {
+    registry,
+    globalStyles,
+    lightStyleIds: new Set(),
+    onUnresolved,
+  });
+  return root.toString();
 }
 
 /**
@@ -236,15 +292,162 @@ function transformNode(node, ctx) {
  * unregistered tags are left untouched. Processing is recursive, covering nested custom elements in
  * both slotted content and generated shadow content.
  *
+ * This is the synchronous path: every component must already be loaded and listed in `registry`.
+ * For lazily-loaded or multi-source components, use {@link renderToStringAsync}.
+ *
  * @param {string} html - an HTML document or fragment (e.g. a framework's rendered response)
- * @param {{ registry?: Registry }} [options]
+ * @param {{ registry?: Registry, onUnresolved?: (tag: string) => void }} [options]
+ *   `onUnresolved` is called for each custom-element-looking tag (contains `-`) not in `registry`;
+ *   it defaults to a dev-only warning. Pass `() => {}` to silence (e.g. for client-only tags).
  * @return {string} the HTML with custom elements pre-rendered
  */
-export function renderToString(html, { registry = {} } = {}) {
-  const root = parse(html, PARSE_OPTIONS);
-  // Collect global styles up front, before any generated shadow templates are spliced in, so we
-  // only ever adopt the input document's own stylesheets.
-  const globalStyles = collectGlobalStyles(root);
-  transformNode(root, { registry, globalStyles, lightStyleIds: new Set() });
-  return root.toString();
+export function renderToString(html, { registry = {}, onUnresolved } = {}) {
+  return runTransform(html, registry, onUnresolved ?? defaultUnresolvedWarning());
+}
+
+/**
+ * A lazily-loaded component map. Each value imports its module (or returns a class) on demand;
+ * `() => import('<literal>')` is plain ESM that a bundler can code-split and bare Node ESM can run,
+ * and is exactly what Vite's `import.meta.glob('./components/*.js')` produces. Keys may be tags or
+ * module paths — see `pathToTag` on {@link lazy}.
+ * @typedef {Object<string, () => (Promise<object> | object | CustomElementConstructor)>} ImporterMap
+ *
+ * Arbitrary tag→class resolution, sync or async — the escape hatch when neither a static map nor an
+ * importer map fits (a custom convention, a remote lookup, etc.).
+ * @typedef {(tag: string) => (CustomElementConstructor | Promise<CustomElementConstructor | undefined> | undefined)} ResolveFn
+ *
+ * Anything {@link renderToStringAsync} can resolve a tag through: a static {@link Registry}, an
+ * importer map wrapped in {@link lazy}, or a {@link ResolveFn}.
+ * @typedef {Registry | ReturnType<typeof lazy> | ResolveFn} Source
+ */
+
+/** Brands the object returned by {@link lazy} so {@link toResolver} can tell it from a Registry. */
+const LAZY_SOURCE = Symbol("element-js-ssr-renderer/lazy");
+
+/** Default key→tag mapping: a path's basename without extension (`./x/el-button.js` → `el-button`). */
+function defaultPathToTag(key) {
+  const base = key.split("/").pop() ?? key;
+  return base.replace(/\.[^.]+$/, "");
+}
+
+/** Default module→class pick: the `default` export, or the value itself if it's already a class. */
+function defaultPick(mod) {
+  return mod?.default ?? mod;
+}
+
+/**
+ * Wrap a lazy {@link ImporterMap} as a {@link Source}. Needed because a component class and an
+ * importer thunk are both `typeof 'function'`, so a bare object can't be told apart from a static
+ * registry — `lazy()` makes the intent explicit. Each module is imported at most once.
+ *
+ * @param {ImporterMap} map
+ * @param {{ pathToTag?: (key: string) => string, pick?: (mod: object, tag: string) => CustomElementConstructor }} [options]
+ *   `pathToTag` derives a tag from each map key (default: basename without extension, which leaves
+ *   already-tag keys untouched). `pick` selects the class from a resolved module (default: its
+ *   `default` export).
+ * @return {{ [LAZY_SOURCE]: true, resolve: ResolveFn }}
+ */
+export function lazy(
+  map,
+  { pathToTag = defaultPathToTag, pick = defaultPick } = {},
+) {
+  const importers = new Map();
+  for (const [key, importer] of Object.entries(map))
+    importers.set(pathToTag(key), importer);
+
+  const cache = new Map(); // tag -> Promise<class>, so each module imports once
+  const resolve = (tag) => {
+    const importer = importers.get(tag);
+    if (!importer) return undefined;
+    if (!cache.has(tag))
+      cache.set(
+        tag,
+        Promise.resolve(importer()).then((mod) => pick(mod, tag)),
+      );
+    return cache.get(tag);
+  };
+  return { [LAZY_SOURCE]: true, resolve };
+}
+
+/**
+ * Normalize a {@link Source} into a uniform `(tag) => class | Promise | undefined` resolver.
+ * @param {Source} source
+ * @return {ResolveFn}
+ */
+function toResolver(source) {
+  if (typeof source === "function") return source; // ResolveFn
+  if (source?.[LAZY_SOURCE]) return source.resolve; // lazy()
+  return (tag) => source[tag]; // Registry
+}
+
+/**
+ * Compose sources into one resolver. Later sources win (`{...a, ...b}` semantics), so a project's
+ * own source listed after `@webtides/element-library` overrides it on a tag clash.
+ * @param {Source[]} sources
+ * @return {(tag: string) => Promise<CustomElementConstructor | undefined>}
+ */
+function composeSources(sources) {
+  const resolvers = sources.map(toResolver);
+  return async (tag) => {
+    for (let i = resolvers.length - 1; i >= 0; i--) {
+      const hit = await resolvers[i](tag);
+      if (hit) return hit;
+    }
+    return undefined;
+  };
+}
+
+/**
+ * Like {@link renderToString}, but resolves components lazily from one or more {@link Source}s, so
+ * only the components actually present on the page are ever loaded — the cold-start / serverless /
+ * edge path. The core never calls `import()` itself; the sources do.
+ *
+ * Resolution and rendering interleave as a fixpoint over the synchronous transform: each pass
+ * renders with the registry resolved so far and reports the custom-element tags it couldn't resolve;
+ * those are resolved (in parallel, each module once) and the pass repeats until nothing new appears.
+ * This loads only on-page tags, deduplicates resolution, and — because it re-renders — also catches
+ * custom elements that appear only inside a component's *generated* template, not just the input.
+ *
+ * @param {string} html
+ * @param {{
+ *   registry?: Registry,
+ *   resolve?: Source | Source[],
+ *   onUnresolved?: (tag: string) => void,
+ * }} [options]
+ *   `registry` is the lowest-precedence source; `resolve` sources override it, later-wins within the
+ *   array. `onUnresolved` is called once per custom-element tag that no source could resolve; it
+ *   defaults to a dev-only warning (pass `() => {}` to silence).
+ * @return {Promise<string>} the HTML with custom elements pre-rendered
+ */
+export async function renderToStringAsync(
+  html,
+  { registry = {}, resolve, onUnresolved } = {},
+) {
+  const extra = resolve == null ? [] : Array.isArray(resolve) ? resolve : [resolve];
+  const resolver = composeSources([registry, ...extra]);
+  const warn = onUnresolved ?? defaultUnresolvedWarning();
+
+  const resolved = {}; // tag -> class; the registry handed to each transform pass, growing each time
+  const attempted = new Set(); // tags we've already tried, so genuine misses don't loop forever
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const misses = new Set();
+    const out = runTransform(html, resolved, (tag) => misses.add(tag));
+
+    const fresh = [...misses].filter((tag) => !attempted.has(tag));
+    if (fresh.length === 0) {
+      // Converged. Anything still missing is genuinely unresolvable — surface it (warn by default).
+      if (warn) for (const tag of misses) if (!resolved[tag]) warn(tag);
+      return out;
+    }
+
+    for (const tag of fresh) attempted.add(tag);
+    await Promise.all(
+      fresh.map(async (tag) => {
+        const cls = await resolver(tag);
+        if (cls) resolved[tag] = cls;
+      }),
+    );
+  }
 }

@@ -1,1 +1,5 @@
-export { renderToString } from "./render-to-string.js";
+export {
+  renderToString,
+  renderToStringAsync,
+  lazy,
+} from "./render-to-string.js";

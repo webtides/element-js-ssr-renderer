@@ -1,10 +1,13 @@
-import { renderToString } from "./render-to-string.js";
+import { renderToStringAsync } from "./render-to-string.js";
 
 /**
  * Astro middleware that pre-renders @webtides/element-js custom elements in every HTML response.
  *
- * Use this from your `src/middleware.{js,ts}` so you control import order — the DOM shim and your
- * component modules must be imported there, before the registry is built:
+ * Use this from your `src/middleware.{js,ts}` so you control import order — the DOM shim must be
+ * imported there first, before any component module is evaluated.
+ *
+ * Components are resolved through {@link renderToStringAsync}, so you can hand them over eagerly or
+ * lazily. A static registry loads everything up front:
  *
  * ```js
  * // src/middleware.js
@@ -18,13 +21,35 @@ import { renderToString } from "./render-to-string.js";
  * });
  * ```
  *
+ * Or resolve lazily so only the components on a given page are ever loaded — the cold-start / edge
+ * path. `import.meta.glob` (Vite, which Astro uses) produces exactly the importer map `lazy()` wants,
+ * and an array of sources composes library + project components (later wins on a tag clash):
+ *
+ * ```js
+ * import '@webtides/element-js-ssr-renderer/dom-shim';
+ * import { elementSSR } from '@webtides/element-js-ssr-renderer/astro';
+ * import { lazy } from '@webtides/element-js-ssr-renderer';
+ * import libraryComponents from '@webtides/element-library/all.server.js';
+ *
+ * export const onRequest = elementSSR({
+ *     resolve: [
+ *         lazy(libraryComponents),                         // base components
+ *         lazy(import.meta.glob('../components/*.js')),     // this project's — overrides the library
+ *     ],
+ * });
+ * ```
+ *
  * On the client, import the matching `…/define` (or `…/all`) so the elements upgrade and hydrate
  * from the Declarative Shadow DOM this emits.
  *
- * @param {{ registry?: import('./render-to-string.js').Registry }} [options]
+ * @param {{
+ *   registry?: import('./render-to-string.js').Registry,
+ *   resolve?: import('./render-to-string.js').Source | import('./render-to-string.js').Source[],
+ *   onUnresolved?: (tag: string) => void,
+ * }} [options]
  * @return {(context: any, next: () => Promise<Response>) => Promise<Response>}
  */
-export function elementSSR({ registry = {} } = {}) {
+export function elementSSR({ registry = {}, resolve, onUnresolved } = {}) {
   return async (context, next) => {
     const response = await next();
 
@@ -32,7 +57,11 @@ export function elementSSR({ registry = {} } = {}) {
     if (!contentType.includes("text/html")) return response;
 
     const html = await response.text();
-    const transformed = renderToString(html, { registry });
+    const transformed = await renderToStringAsync(html, {
+      registry,
+      resolve,
+      onUnresolved,
+    });
 
     return new Response(transformed, {
       status: response.status,

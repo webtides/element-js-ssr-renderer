@@ -21,6 +21,47 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-03 — Document component resolution; close out T-008
+
+**Tasks:** T-008.8, T-008.3, T-008.4
+
+- Added a "Loading & resolving components" section to the README: the three source kinds (static registry, `lazy()` importer map, resolver function incl. `fromDirectory`), multiple-source composition with later-wins precedence, an environment matrix (zero-config / Node / Vite / webpack / edge), a sync-vs-async note, and the dev unresolved-tag warning. Refreshed the intro and Astro section with the lazy `import.meta.glob` + library-composition variant.
+- Closed T-008.3 (precedence) and T-008.4 (`lazy` `pathToTag`/`pick`) — both implemented earlier in T-008.1/.2 and now documented; added a test for the `pathToTag`/`pick` override path. Suite: 38 tests. T-008 complete.
+
+## 2026-06-03 — Node-only convention resolver (`resolve/node`)
+
+**Tasks:** T-008.5
+
+- Added `fromDirectory(dir, { tagToPath, pick })` behind a new `@webtides/element-js-ssr-renderer/resolve/node` export — a `ResolveFn` that maps a tag to a file on disk (`<el-button>` → `<dir>/el-button.js`) and imports it on demand, so a project's components resolve by filename with no registry and no bundler. Usable as a `resolve` source alone or in an array.
+- Quarantined in its own module on purpose: it constructs a *runtime* import specifier, which a bundler can't analyze — fine in a long-running Node server, but it must never enter an edge bundle, so edge builds that don't import this path never see the dynamic import. Docs point bundled/edge targets to `lazy(import.meta.glob(...))`.
+- Accepts a path or `file:` URL base (URL recommended for ESM, since relative paths resolve from `cwd`); caches each found module's import; guards against path traversal in attacker-influenced tags; treats a missing file as a pass-through miss but lets errors *inside* a found module propagate (a broken component fails loudly instead of looking unregistered).
+- Added `test/resolve-node.test.js` (6 tests) + an `el-fixture` component fixture: convention render, `file:` URL base, missing-file pass-through, per-module-once import, traversal refusal, and the missing-arg guard. Suite: 37 tests across 3 files.
+
+## 2026-06-03 — Dev-mode warning for unresolved custom-element tags
+
+**Tasks:** T-008.6
+
+- `onUnresolved` now defaults to a dev-only `console.warn` (once per distinct tag, naming it) when a hyphenated tag matches no component — surfacing the "forgot to register / typo'd the tag" mistake the static registry used to swallow silently. Wired into both `renderToString` (which gained the `onUnresolved` option) and `renderToStringAsync`, so the Astro middleware gets it for free.
+- Gated to non-production via `NODE_ENV` and `typeof process` (edge-safe; bundlers inline the value). Suppressible by passing a custom `onUnresolved` (e.g. `() => {}`) for intentionally client-only / third-party tags. Output is otherwise unchanged — unresolved tags still pass through untouched.
+- Added 6 tests: warns + names the tag, per-tag dedup across instances, no warning for resolved/plain tags, custom-handler silencing, production silence, and the async path. Suite: 31 tests.
+
+## 2026-06-03 — Astro middleware on the async resolution path
+
+**Tasks:** T-008.7
+
+- `elementSSR` now pre-renders via `renderToStringAsync` and accepts `resolve` / `onUnresolved` alongside the existing `registry`, so the middleware can load components lazily (only those on a page) instead of enumerating them all up front. Output is unchanged for the static-registry case (sync/async parity).
+- JSDoc documents both styles: a static registry, and a lazy `[lazy(libraryComponents), lazy(import.meta.glob('../components/*.js'))]` composition where the project source overrides the library on a tag clash.
+- Added `test/astro.test.js`: static-registry render, lazy render that loads only the present component, and pass-through of status/headers and non-HTML responses. Suite: 25 tests across 2 files.
+
+## 2026-06-03 — Lazy, multi-source component resolution (`renderToStringAsync`)
+
+**Tasks:** T-008.1, T-008.2
+
+- Added `renderToStringAsync(html, { registry, resolve, onUnresolved })` plus a `lazy()` helper, so components can be resolved on demand from one or more sources instead of a fully-enumerated static `registry`. Only the components actually present on a page are ever loaded — the cold-start / serverless / edge path. The core never calls `import()` itself; sources do.
+- A `Source` is a static `{ tag: Class }` registry, a `lazy()`-wrapped importer map (`{ key: () => import() }`, the `import.meta.glob` shape; keys may be tags or module paths via `pathToTag`, class picked via `pick`/`.default`), or a bare `(tag) => Class|Promise` resolver. `resolve` accepts one or an array; later sources win (`{...a,...b}`), so a project source overrides `@webtides/element-library`.
+- Implemented as a resolve→render fixpoint over the **unchanged** sync `transformNode` (no async fork of the transform): each pass renders with the registry resolved so far and reports custom-element tags it couldn't resolve through a new `onUnresolved` context hook; the wrapper resolves those in parallel and re-runs until stable. Side benefit: catches custom elements that appear only inside a component's generated template, not just the input HTML.
+- `renderToString` stays synchronous and registry-only (extracted a shared `runTransform`); existing behaviour/tests untouched. Added 8 tests covering sync/async parity, bare-fn resolver, present-only loading, glob-path keys, source precedence, generated-template nesting, and `onUnresolved`.
+
 ## 2026-06-03 — De-duplicate emitted `<style>` blocks
 
 **Tasks:** T-006

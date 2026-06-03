@@ -1,6 +1,6 @@
 import "../src/dom-shim.js"; // must precede any component import
-import { describe, it, expect } from "vitest";
-import { renderToString } from "../src/index.js";
+import { describe, it, expect, vi } from "vitest";
+import { renderToString, renderToStringAsync, lazy } from "../src/index.js";
 
 import Button from "@webtides/element-library/button";
 import InputField from "@webtides/element-library/input-field";
@@ -167,5 +167,174 @@ describe("renderToString", () => {
     const out = render("<el-button><el-button>nested</el-button></el-button>");
     // two shadow templates: outer + nested
     expect(out.match(/shadowrootmode/g)?.length).toBe(2);
+  });
+});
+
+// A shadow component whose generated template itself contains another custom element — exercises
+// resolution of tags that appear only in generated output, not in the input HTML.
+class Wrapper extends TemplateElement {
+  constructor() {
+    super({ shadowRender: true });
+  }
+  template() {
+    return html`<el-button>wrapped</el-button>`;
+  }
+}
+// Two classes for the same tag, to assert source precedence.
+class Red extends TemplateElement {
+  constructor() {
+    super({ shadowRender: true });
+  }
+  template() {
+    return html`<span>RED</span>`;
+  }
+}
+class Blue extends TemplateElement {
+  constructor() {
+    super({ shadowRender: true });
+  }
+  template() {
+    return html`<span>BLUE</span>`;
+  }
+}
+
+describe("renderToStringAsync", () => {
+  it("renders identically to the sync path for the same components", async () => {
+    const input = '<el-button variant="primary">Save</el-button>';
+    const sync = renderToString(input, { registry });
+    const out = await renderToStringAsync(input, { resolve: registry });
+    expect(out).toBe(sync);
+  });
+
+  it("resolves a component from a bare resolver function", async () => {
+    const out = await renderToStringAsync("<el-button>x</el-button>", {
+      resolve: (tag) => (tag === "el-button" ? Button : undefined),
+    });
+    expect(out).toContain('<template shadowrootmode="open">');
+  });
+
+  it("imports only the components actually present on the page", async () => {
+    const buttonImporter = vi.fn(() => Promise.resolve({ default: Button }));
+    const inputImporter = vi.fn(() => Promise.resolve({ default: InputField }));
+    const source = lazy({
+      "el-button": buttonImporter,
+      "el-input-field": inputImporter,
+    });
+
+    const out = await renderToStringAsync("<el-button>x</el-button>", {
+      resolve: source,
+    });
+
+    expect(out).toContain("shadowrootmode");
+    expect(buttonImporter).toHaveBeenCalledTimes(1);
+    expect(inputImporter).not.toHaveBeenCalled(); // not on the page → never loaded
+  });
+
+  it("derives tags from module-path keys (import.meta.glob shape)", async () => {
+    const source = lazy({
+      "./components/el-button.js": () => Promise.resolve({ default: Button }),
+    });
+    const out = await renderToStringAsync("<el-button>x</el-button>", {
+      resolve: source,
+    });
+    expect(out).toContain("shadowrootmode");
+  });
+
+  it("honors lazy() pathToTag and pick overrides", async () => {
+    const out = await renderToStringAsync("<el-button>x</el-button>", {
+      resolve: lazy(
+        { "buttons/Btn.entry": () => Promise.resolve({ Btn: Button }) },
+        { pathToTag: () => "el-button", pick: (mod) => mod.Btn },
+      ),
+    });
+    expect(out).toContain("shadowrootmode");
+  });
+
+  it("lets a later source override an earlier one on a tag clash", async () => {
+    const out = await renderToStringAsync("<el-clash></el-clash>", {
+      resolve: [{ "el-clash": Red }, { "el-clash": Blue }],
+    });
+    const shadow = shadowOf(out);
+    expect(shadow).toContain("BLUE");
+    expect(shadow).not.toContain("RED");
+  });
+
+  it("resolves custom elements that appear only in generated templates", async () => {
+    const out = await renderToStringAsync("<el-wrapper></el-wrapper>", {
+      resolve: lazy({
+        "el-wrapper": () => Promise.resolve({ default: Wrapper }),
+        "el-button": () => Promise.resolve({ default: Button }),
+      }),
+    });
+    // wrapper's shadow + the button it renders inside that shadow → two declarative shadow roots
+    expect(out.match(/shadowrootmode/g)?.length).toBe(2);
+  });
+
+  it("reports genuinely unresolved tags once, but not resolved ones", async () => {
+    const onUnresolved = vi.fn();
+    await renderToStringAsync(
+      "<my-widget></my-widget><el-button>x</el-button>",
+      { resolve: { "el-button": Button }, onUnresolved },
+    );
+    expect(onUnresolved).toHaveBeenCalledWith("my-widget");
+    expect(onUnresolved).not.toHaveBeenCalledWith("el-button");
+    expect(onUnresolved).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("unresolved-tag warning (dev)", () => {
+  it("warns once for an unresolved custom-element tag, naming it", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    render("<el-button>x</el-button><my-unknown></my-unknown>");
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0]).toContain("<my-unknown>");
+    spy.mockRestore();
+  });
+
+  it("warns once per tag even across repeated instances", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    render("<my-unknown></my-unknown><my-unknown></my-unknown>");
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
+  it("does not warn for resolved tags or plain elements", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    render("<el-button>x</el-button><div></div>");
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("can be silenced with a custom onUnresolved", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    renderToString("<my-unknown></my-unknown>", {
+      registry,
+      onUnresolved: () => {},
+    });
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("stays silent in production", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      render("<my-unknown></my-unknown>");
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      process.env.NODE_ENV = prev;
+      spy.mockRestore();
+    }
+  });
+
+  it("warns through the async path too", async () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await renderToStringAsync("<my-unknown></my-unknown>", {
+      resolve: { "el-button": Button },
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0]).toContain("<my-unknown>");
+    spy.mockRestore();
   });
 });
