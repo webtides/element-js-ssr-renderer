@@ -11,7 +11,7 @@
   "exports": {
     ".": "./src/index.js",
     "./dom-shim": "./src/dom-shim.js",
-    "./astro": "./src/astro.js",
+    "./astro": "./src/adapters/astro.js",
     "./resolve/node": "./src/resolve/node.js"
   },
   "files": [

@@ -21,6 +21,31 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-03 — Group framework adapters under src/adapters
+
+**Tasks:** — (prep for T-010 / T-011)
+
+- Moved `src/astro.js` → `src/adapters/astro.js` and pointed the `./astro` export at it — the public subpath is unchanged, so consumers and the example are unaffected (verified: 38 tests green, example still emits 9 DSD templates). Updated `test/astro.test.js`'s internal import.
+- Extracted the repeated "transform an HTML `Response`" logic into `src/adapters/transform-response.js` (`transformHtmlResponse`: content-type gate → `renderToStringAsync` → re-wrap preserving status/headers). `elementSSR` is now a one-liner over it; future `Response`-based adapters (Nuxt) reuse it, while string-based ones (SvelteKit's `transformPageChunk`) call `renderToStringAsync` directly.
+- Established the adapter convention so frameworks can be added in parallel: one `src/adapters/<framework>.js`, published as `./<framework>`, landing together with its example + a test. Documented in `examples/README.md` (adapter table + checklist). No `nuxt`/`sveltekit` stubs added — adapters ship with working examples (T-010/T-011), not as empty exports.
+
+## 2026-06-03 — Restructure examples for multiple frameworks (T-002.1)
+
+**Tasks:** T-002.1
+
+- Moved `example/` → `examples/astro/` and bumped its relative `file:` deps (`file:../..` for the renderer, `file:../../../element-library`); reinstalled + rebuilt to confirm byte-identical SSR output after the move.
+- Added `examples/README.md` as the index: a framework status table (Astro available; Nuxt + SvelteKit planned), the three framework-agnostic integration moves (shim-first → wrap the HTML response through `renderToStringAsync` → load `define` on the client), a hook-mapping table across Astro/Nuxt/SvelteKit, and an "adding a new example" checklist (incl. the bundler import-order gotcha).
+- Filed the next frameworks as open tasks T-010 (Nuxt, Nitro `render:response`) and T-011 (SvelteKit, `handle`/`transformPageChunk`), both set to reuse the Astro example's `x-counter` / `x-greeting` for parity. Updated the package README link to `examples/astro/`.
+
+## 2026-06-03 — Runnable Astro example (T-002)
+
+**Tasks:** T-002
+
+- Added `example/` — a `@astrojs/node` (`output: "server"`) Astro app that wires the `elementSSR` middleware and SSRs custom elements end-to-end. The middleware composes two sources to exercise T-008: element-library components (`el-button`, `el-notification`) via an eager static `registry`, and the project's own components (`x-counter`, `x-greeting`) via `lazy(import.meta.glob("./components/*.js"))`.
+- New local components cover both render paths and reactivity: `x-counter` (shadow → DSD, interactive — buttons mutate a reactive `count`, seedable from a `count` attribute) and `x-greeting` (light DOM). The page also nests `el-button` inside `el-notification` to show recursive/slotted resolution. A global `<style is:global>` (with `--el-*` tokens) demonstrates `adoptGlobalStyles` into shadow roots.
+- Verified both paths: `astro dev` and the production build both emit 9 DSD templates, the light-DOM template, 5 SSR'd `el-button`s (incl. the nested one), 34 `<!--template-part-->` hydration markers, and the seeded `count="3"` rendered as `3`. Client `<script>` loads each component's `define` so the elements hydrate in place.
+- Build gotcha fixed via `vite.ssr.noExternal` for the three `@webtides/*` packages: by default Rollup hoisted element-js' `import` above the inlined DOM-shim side effect, so `HTMLElement` was undefined when component classes evaluated; bundling them keeps the shim ordered first. (`astro dev`, being unbundled, was already fine.) Documented in `astro.config.mjs` and `example/README.md`.
+
 ## 2026-06-03 — Document component resolution; close out T-008
 
 **Tasks:** T-008.8, T-008.3, T-008.4

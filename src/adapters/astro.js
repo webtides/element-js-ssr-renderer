@@ -1,4 +1,4 @@
-import { renderToStringAsync } from "./render-to-string.js";
+import { transformHtmlResponse } from "./transform-response.js";
 
 /**
  * Astro middleware that pre-renders @webtides/element-js custom elements in every HTML response.
@@ -6,8 +6,8 @@ import { renderToStringAsync } from "./render-to-string.js";
  * Use this from your `src/middleware.{js,ts}` so you control import order — the DOM shim must be
  * imported there first, before any component module is evaluated.
  *
- * Components are resolved through {@link renderToStringAsync}, so you can hand them over eagerly or
- * lazily. A static registry loads everything up front:
+ * Components are resolved through {@link import('../render-to-string.js').renderToStringAsync}, so
+ * you can hand them over eagerly or lazily. A static registry loads everything up front:
  *
  * ```js
  * // src/middleware.js
@@ -43,8 +43,8 @@ import { renderToStringAsync } from "./render-to-string.js";
  * from the Declarative Shadow DOM this emits.
  *
  * @param {{
- *   registry?: import('./render-to-string.js').Registry,
- *   resolve?: import('./render-to-string.js').Source | import('./render-to-string.js').Source[],
+ *   registry?: import('../render-to-string.js').Registry,
+ *   resolve?: import('../render-to-string.js').Source | import('../render-to-string.js').Source[],
  *   onUnresolved?: (tag: string) => void,
  * }} [options]
  * @return {(context: any, next: () => Promise<Response>) => Promise<Response>}
@@ -52,21 +52,6 @@ import { renderToStringAsync } from "./render-to-string.js";
 export function elementSSR({ registry = {}, resolve, onUnresolved } = {}) {
   return async (context, next) => {
     const response = await next();
-
-    const contentType = response.headers.get("content-type") ?? "";
-    if (!contentType.includes("text/html")) return response;
-
-    const html = await response.text();
-    const transformed = await renderToStringAsync(html, {
-      registry,
-      resolve,
-      onUnresolved,
-    });
-
-    return new Response(transformed, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers,
-    });
+    return transformHtmlResponse(response, { registry, resolve, onUnresolved });
   };
 }

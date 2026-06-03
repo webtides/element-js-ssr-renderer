@@ -1,0 +1,53 @@
+---
+import Base from "../layouts/Base.astro";
+---
+
+<Base>
+  <h1>element-js SSR renderer — Astro example</h1>
+  <p>
+    Every custom element below is authored as plain HTML in this
+    <code>.astro</code> page. The <code>elementSSR</code> middleware pre-renders
+    each one on the server — shadow components as Declarative Shadow DOM,
+    light-DOM components in place — then they hydrate in the browser.
+  </p>
+  <p>
+    <strong>To see it work:</strong> view source (or disable JavaScript) — the
+    components are already fully rendered, including
+    <code>&lt;template shadowrootmode="open"&gt;</code> for the shadow ones. Then
+    with JS on, the counter's buttons work: that's hydration, not a re-render.
+  </p>
+
+  <section>
+    <h2>Local components</h2>
+    <p class="row">
+      <!-- Shadow DOM, interactive — seeded from a `count` attribute. -->
+      <x-counter count="3" label="Apples"></x-counter>
+      <x-counter label="Pears"></x-counter>
+    </p>
+    <!-- Light DOM. -->
+    <x-greeting name="Astro"></x-greeting>
+  </section>
+
+  <section>
+    <h2>element-library components</h2>
+    <div class="row">
+      <el-button variant="primary">Primary</el-button>
+      <el-button variant="success" outline>Outline</el-button>
+      <el-button variant="danger" pill>Pill</el-button>
+      <el-button loading>Loading</el-button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Nested + composed</h2>
+    <!--
+      The renderer walks recursively and resolves nested custom elements —
+      including ones inside other components' slotted content — so the button
+      inside this notification is SSR'd too.
+    -->
+    <el-notification variant="primary" open>
+      Saved successfully.
+      <el-button size="small" variant="primary">Undo</el-button>
+    </el-notification>
+  </section>
+</Base>

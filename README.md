@@ -225,6 +225,12 @@ export const onRequest = elementSSR({
 
 Then author components normally in `.astro` files and load their `define` modules in a client `<script>`.
 
+A complete, runnable version of this setup lives in [`examples/astro/`](./examples/astro) — a
+`@astrojs/node` app that composes element-library components (eager registry) with its own
+components (`lazy(import.meta.glob(...))`), covering both the shadow (DSD) and light-DOM paths.
+`cd examples/astro && npm install && npm run dev`. See [`examples/`](./examples) for the shared
+integration pattern and other frameworks.
+
 ## Limitations & notes
 
 - **Declarative Shadow DOM support.** All current evergreen browsers parse `<template shadowrootmode>`. For

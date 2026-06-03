@@ -1,6 +1,6 @@
 import "../src/dom-shim.js"; // must precede any component import
 import { describe, it, expect, vi } from "vitest";
-import { elementSSR } from "../src/astro.js";
+import { elementSSR } from "../src/adapters/astro.js";
 import { lazy } from "../src/index.js";
 
 import Button from "@webtides/element-library/button";
