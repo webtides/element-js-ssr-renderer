@@ -6,7 +6,8 @@ Give it an HTML string (typically the rendered output of Astro / SvelteKit / Nux
 pre-renders every registered custom element **in place**:
 
 - **Shadow-DOM components** are emitted as [Declarative Shadow DOM](https://web.dev/articles/declarative-shadow-dom)
-  (`<template shadowrootmode="open">`) with their styles inlined.
+  (`<template shadowrootmode="open">`) with the global styles they adopt — honoring element-js'
+  [`adoptGlobalStyles`](https://github.com/webtides/element-js) option — plus their own styles inlined.
 - **Light-DOM components** have their template rendered directly into the element.
 - **Behavioral wrappers** (components with an empty `template()`, e.g. `accordion-group`) and unregistered
   tags are left untouched.
@@ -22,8 +23,11 @@ package is the glue: it parses your HTML, and for each registered tag it constru
 attributes to properties, calls`template().toString()`, and splices the result back in — wrapping shadow
 components in Declarative Shadow DOM and inlining their styles.
 
-Theme tokens (`--el-*` custom properties on `:root`) inherit **through** the shadow boundary, so themed
-shadow components are styled from your global theme stylesheet without duplicating it into each shadow root.
+Shadow components also adopt the document's global stylesheets (every `<style>` / `<link rel="stylesheet">`
+in the input, wherever it sits) into their shadow root, mirroring element-js' `adoptGlobalStyles` option:
+`true` (default) adopts all, `false` adopts none, and a selector / array of selectors adopts only matching
+sources. On top of that, theme tokens (`--el-*` custom properties on `:root`) inherit **through** the shadow
+boundary.
 
 ## Install
 

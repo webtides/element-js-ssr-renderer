@@ -21,6 +21,30 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-03 — De-duplicate emitted `<style>` blocks
+
+**Tasks:** T-006
+
+- Light-DOM component styles are now emitted as id'd `<style id="TAGNAME{index}">` tags (matching element-js' `appendStyleSheets` identifiers) and only once per id across the whole document, so N instances of a component no longer repeat the same CSS. The id also lets the client de-dupe against the SSR output on hydration instead of appending a copy.
+- Adopted global styles are de-duped within each shadow root (a selector can match the same source more than once). Cross-instance shadow duplication is inherent to shadow-root isolation and intentionally kept.
+- `renderComponent` now returns per-style entries; `transformNode` takes a context object (`registry`, `globalStyles`, `lightStyleIds`). Added tests for light dedup and shadow within-root dedup; updated the T-004 light-styles test for the new id'd output.
+
+## 2026-06-03 — Honor `adoptGlobalStyles` for shadow components
+
+**Tasks:** T-005
+
+- `renderToString` now collects the input document's global stylesheets (`<style>` / `<link rel="stylesheet">`, anywhere in the input, excluding sources scoped inside an existing `<template>`) and inlines the ones each shadow component adopts into its declarative shadow root, ahead of the component's own styles.
+- Adoption mirrors element-js' option: `false` → none, `true` (default) → all, selector / selector array → only matching sources (`node.matches`); the runtime-only `'document'` token is ignored (no static-HTML equivalent).
+- Added tests for all three modes plus template-scoped exclusion; updated README/JSDoc (previously claimed only custom-property inheritance).
+
+## 2026-06-03 — Fix dropped light-DOM component styles
+
+**Tasks:** T-004
+
+- `renderComponent` produced `_styles` but `transformNode`'s light-DOM branch never emitted them, so light-DOM components lost their CSS in SSR output. Now inlined as a `<style>` ahead of the rendered markup.
+- Added a test asserting a light-DOM component (`el-input-field`) emits its styles.
+- Surfaced two follow-ups from reviewing `example-from-the-past/`: T-005 (`adoptGlobalStyles`) and T-006 (style de-dup).
+
 ## 2026-06-03 — Initialized agent workflow
 
 **Tasks:** —
