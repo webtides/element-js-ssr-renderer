@@ -28,6 +28,8 @@ Hierarchical task list for this project. Both the user and any agents read and u
   - [ ] T-007.3 Handle `Store` references — serialize stores as `Store/<uuid>` with their state under that uuid, and de-duplicate stores shared across components, mirroring element-js' replacer/reviver (SerializeStateHelper.js)
   - [ ] T-007.4 Add an opt-in surface (e.g. a `serializeState` option on `renderToString` / `elementSSR`) that sets `globalThis.elementJsConfig.serializeState`; document the import-order/SSR caveats
   - [ ] T-007.5 Tests: round-trip a component with non-default state — assert `ejs:key` on the host, presence/shape of the `ejs/json` script, and that restored values match the server state (incl. a shared-`Store` case)
+- [ ] T-009 Optional async per-component property provider — let consumers supply server-fetched / async props for a component before its SSR render, merged ahead of HTML attributes over element defaults. The renderer currently derives props only from attributes + defaults; add a hook (e.g. a `properties(tag, node)` option, or a `<tag>.properties.js` convention) for data-backed components. Salvaged from the old Magnolia renderer's `<tag>.properties.js` + CMS-content pattern; distinct from T-007 (which transports already-rendered state to the client, not server-side prop seeding).
+
 ## Done
 
 <!-- Move completed top-level tasks here when convenient. -->
