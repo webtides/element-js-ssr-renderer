@@ -119,12 +119,15 @@ bundled / edge targets use `lazy(import.meta.glob(...))`. See
 
 ## `elementSSR(options?)`
 
-A framework adapter that does the HTML plumbing for you, over `renderToStringAsync`. Two variants, both
+A framework adapter that does the HTML plumbing for you, over `renderToStringAsync`. Three variants, all
 taking the same options.
 
 ```ts
 // from @webtides/element-js-ssr-renderer/astro
 elementSSR(options?): (context, next) => Promise<Response>
+
+// from @webtides/element-js-ssr-renderer/nuxt
+elementSSR(options?): render:response hook handler (mutates response.body)
 
 // from @webtides/element-js-ssr-renderer/sveltekit
 elementSSR(options?): handle hook (transformPageChunk)
@@ -139,6 +142,8 @@ options?: {
 ```
 
 - **Astro** — returns an `onRequest` middleware. See [Astro](/frameworks/astro).
+- **Nuxt** — returns a Nitro `render:response` handler that transforms `response.body` in place. See
+  [Nuxt](/frameworks/nuxt).
 - **SvelteKit** — returns a `handle` hook that buffers `transformPageChunk` and transforms the whole document
   on the final chunk. See [SvelteKit](/frameworks/sveltekit).
 
@@ -201,7 +206,8 @@ client restores the server's state on hydration instead of re-deriving from prop
 are emitted as `Store/<key>` references and a shared store is serialized once. Requires element-js' matching
 `serializeState` config to be enabled on the client too. See
 [State transport](/concepts/#state-transport) for the format and caveats. The same option is accepted by the
-[Astro](/frameworks/astro) and [SvelteKit](/frameworks/sveltekit) `elementSSR` adapters.
+[Astro](/frameworks/astro), [Nuxt](/frameworks/nuxt) and [SvelteKit](/frameworks/sveltekit) `elementSSR`
+adapters.
 
 ## Subpath exports
 
@@ -210,5 +216,6 @@ are emitted as `Store/<key>` references and a shared store is serialized once. R
 | `@webtides/element-js-ssr-renderer`                 | `renderToString`, `renderToStringAsync`, `lazy`  |
 | `@webtides/element-js-ssr-renderer/dom-shim`        | DOM globals shim (side-effect import)            |
 | `@webtides/element-js-ssr-renderer/astro`           | `elementSSR` (Astro middleware)                  |
+| `@webtides/element-js-ssr-renderer/nuxt`            | `elementSSR` (Nitro `render:response` handler)   |
 | `@webtides/element-js-ssr-renderer/sveltekit`       | `elementSSR` (SvelteKit `handle` hook)           |
 | `@webtides/element-js-ssr-renderer/resolve/node`    | `fromDirectory` (Node-only)                      |

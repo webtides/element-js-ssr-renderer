@@ -56,9 +56,9 @@ serverless / edge win), compose multiple sources, or wire the renderer into a me
 
 ## Examples
 
-Runnable, self-contained apps per framework live under [`examples/`](./examples) (Astro and SvelteKit
-available; Nuxt planned). Each SSRs the same components to Declarative Shadow DOM and hydrates them in the
-browser, doubling as a copy-pasteable blueprint.
+Runnable, self-contained apps per framework live under [`examples/`](./examples) (Astro, Nuxt, and
+SvelteKit). Each SSRs the same components to Declarative Shadow DOM and hydrates them in the browser,
+doubling as a copy-pasteable blueprint.
 
 ## License
 

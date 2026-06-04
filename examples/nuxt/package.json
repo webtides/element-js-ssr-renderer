@@ -1,0 +1,19 @@
+{
+  "name": "element-js-ssr-renderer-nuxt-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Runnable Nuxt example for @webtides/element-js-ssr-renderer — SSRs element-js custom elements (local + element-library) to Declarative Shadow DOM via a Nitro render:response hook, then hydrates them in the browser.",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@webtides/element-js": "^1.2.11",
+    "@webtides/element-js-ssr-renderer": "file:../..",
+    "@webtides/element-library": "file:../../../element-library",
+    "nuxt": "^3.14.0"
+  }
+}

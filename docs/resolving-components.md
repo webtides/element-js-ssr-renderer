@@ -98,8 +98,8 @@ them.
 | Deployment                                    | Supply `resolve` / `registry` as              | Tooling   |
 | --------------------------------------------- | --------------------------------------------- | --------- |
 | Anything, zero-config                         | static `{ tag: Class }` registry              | none      |
-| Plain Node server                             | `fromDirectory(...)` or a hand-written map    | none      |
-| Vite meta-framework (Astro, SvelteKit, Nuxt)  | `lazy(import.meta.glob("./components/*.js"))` | Vite      |
+| Plain Node server (incl. Nuxt / Nitro)        | `fromDirectory(...)` or a hand-written map    | none      |
+| Vite meta-framework (Astro, SvelteKit)        | `lazy(import.meta.glob("./components/*.js"))` | Vite      |
 | webpack                                       | `lazy()` over a `require.context`-shaped map  | webpack   |
 | Bundled edge (Workers, Deno, Vercel Edge)     | `lazy(...)` with static-literal importers     | a bundler |
 

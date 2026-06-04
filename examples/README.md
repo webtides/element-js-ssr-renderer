@@ -8,7 +8,7 @@ Shadow DOM (and light DOM), then hydrates them in the browser.
 | Framework  | Directory                | Status      | SSR hook used                        |
 | ---------- | ------------------------ | ----------- | ------------------------------------ |
 | Astro      | [`astro/`](./astro)      | ✅ available | `onRequest` middleware (`elementSSR`) |
-| Nuxt       | `nuxt/`                  | 🛠 planned   | Nitro `render:response` hook         |
+| Nuxt       | [`nuxt/`](./nuxt)        | ✅ available | Nitro `render:response` hook (`elementSSR`) |
 | SvelteKit  | [`sveltekit/`](./sveltekit) | ✅ available | `handle` hook (`transformPageChunk`)  |
 
 Each example is **fully self-contained** — its own `package.json`, its own copy of the
@@ -37,11 +37,11 @@ three moves — only the _names_ of the hooks differ:
 
 Where each framework exposes those:
 
-| Step                | Astro                              | Nuxt (Nitro)                  | SvelteKit                              |
-| ------------------- | ---------------------------------- | ----------------------------- | -------------------------------------- |
-| Owns the SSR hook   | `src/middleware.js`                | a Nitro plugin / server hook  | `src/hooks.server.js`                  |
-| Gets the HTML       | `(await next()).text()`            | `render:response` body        | `transformPageChunk({ html })`         |
-| Returns transformed | new `Response(transformed, …)`     | mutate `response.body`         | return the transformed chunk           |
+| Step                | Astro                              | Nuxt (Nitro)                         | SvelteKit                              |
+| ------------------- | ---------------------------------- | ------------------------------------ | -------------------------------------- |
+| Owns the SSR hook   | `src/middleware.js`                | `server/plugins/element-ssr.js`      | `src/hooks.server.js`                  |
+| Gets the HTML       | `(await next()).text()`            | `render:response` body               | `transformPageChunk({ html })`         |
+| Returns transformed | new `Response(transformed, …)`     | mutate `response.body`               | return the transformed chunk           |
 
 ### Framework adapters
 
@@ -52,7 +52,7 @@ it for you, published as a stable subpath export and living under
 | Adapter export | Status      | What it gives you                                                        |
 | -------------- | ----------- | ------------------------------------------------------------------------ |
 | `…/astro`      | ✅ available | `elementSSR(options)` → an `onRequest` middleware                        |
-| `…/nuxt`       | 🛠 planned   | a Nitro hook / plugin (lands with `examples/nuxt`)                       |
+| `…/nuxt`       | ✅ available | `elementSSR(options)` → a Nitro `render:response` handler                |
 | `…/sveltekit`  | ✅ available | `elementSSR(options)` → a `handle` hook (`transformPageChunk`)           |
 
 Adapters that deal in `Response` objects (Astro, Nuxt) share one internal kernel,

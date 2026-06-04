@@ -35,5 +35,5 @@ features:
   - title: Framework-agnostic core
     details: >-
       Give it an HTML string, get one back with custom elements pre-rendered.
-      Thin adapters wire it into Astro and SvelteKit; Nuxt is on the way.
+      Thin adapters wire it into Astro, Nuxt, and SvelteKit.
 ---

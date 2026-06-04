@@ -21,6 +21,15 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-04 — Nuxt example + `./nuxt` adapter (T-010)
+
+**Tasks:** T-010
+
+- Added the `./nuxt` adapter (`src/adapters/nuxt.js`, new package export): `elementSSR(options)` returns a Nitro `render:response` handler. Nitro's hook hands a plain `{ body, headers, statusCode }` object (not a web `Response`) that you mutate in place, so the adapter wraps `response.body` in a `Response`, runs it through the shared `transformHtmlResponse` kernel (same one Astro uses), and writes the transformed HTML back — non-HTML and non-string bodies pass through untouched. `test/nuxt.test.js` mirrors `test/astro.test.js` over the Nitro response shape (registry, lazy-only-loads-what's-present, non-HTML passthrough, non-string body). Suite green at 52 (was 48).
+- Added the runnable example under `examples/nuxt/` (Nuxt 3 + Nitro): a server plugin registers the hook; `app.vue` authors the same `x-counter`/`x-greeting` + `el-button`/`el-notification` markup as Astro/SvelteKit; a `.client.js` plugin loads each `define`; global tokens are injected inline via `useHead` so the renderer can adopt them into shadow roots. `nuxt.config.ts` sets `vue.compilerOptions.isCustomElement` (so Vue passes the tags through) and `nitro.externals.inline` (self-contained bundle of the `file:`-linked packages).
+- **Two Nitro-specific gotchas, documented in the example + docs:** (1) Nitro reorders top-level module evaluation, so a static `import '…/dom-shim'` is *not* guaranteed to run before element-js' `extends HTMLElement` (it didn't — `ReferenceError: HTMLElement is not defined` at startup). Fixed by loading the shim and all element-js imports via *ordered dynamic `import()`* inside the plugin, which evaluates in call order. (2) `import.meta.glob` is Vite-only and Nuxt's server is Nitro/rollup, so the lazy source is a hand-written `lazy({ 'x-counter': () => import(...) })` map.
+- Verified end-to-end: `nuxt build` + `node .output/server/index.mjs`, then curl'd the page — 8 `shadowrootmode="open"` DSD templates, 34 `template-part` hydration markers, light-DOM greeting rendered in place (`Hello, <strong>Nuxt</strong>`), adopted `--el-*` global tokens inside shadow roots, attribute-seeded counters (`Apples: 3`, `Pears: 0`). Updated `examples/README.md` (3 tables), `docs/frameworks/nuxt.md` (planned → shipped), the API reference (third `elementSSR` variant + subpath row), `docs/index.md`, `docs/reference/limitations.md` (dropped the Nuxt roadmap item), `docs/resolving-components.md` (moved Nuxt out of the Vite-glob row), and the top-level `README.md`. `docs:build` clean.
+
 ## 2026-06-04 — Server→client state transport (T-007)
 
 **Tasks:** T-007

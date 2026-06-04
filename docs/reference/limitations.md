@@ -20,7 +20,5 @@ Tracked in the repo's
   each component's `serializeState()` output into a single `<script type="ejs/json">`, and handle shared
   `Store` references, so stateful components hydrate with their server-rendered state instead of re-deriving
   it from property defaults.
-- **Nuxt adapter + example** (T-010) — a Nitro `render:response` integration and `…/nuxt` adapter, reusing
-  the shared `transformHtmlResponse` kernel. See [Nuxt](/frameworks/nuxt).
 - **Async per-component property provider** (T-009) — an optional hook to supply server-fetched / async props
   for a component before its SSR render, merged ahead of HTML attributes over element defaults.
