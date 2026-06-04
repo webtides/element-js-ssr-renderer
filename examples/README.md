@@ -5,11 +5,11 @@ specific meta-framework. Each one SSRs the same kinds of `@webtides/element-js` 
 elements — some authored locally, some from `@webtides/element-library` — to Declarative
 Shadow DOM (and light DOM), then hydrates them in the browser.
 
-| Framework  | Directory                | Status      | SSR hook used                        |
-| ---------- | ------------------------ | ----------- | ------------------------------------ |
-| Astro      | [`astro/`](./astro)      | ✅ available | `onRequest` middleware (`elementSSR`) |
-| Nuxt       | [`nuxt/`](./nuxt)        | ✅ available | Nitro `render:response` hook (`elementSSR`) |
-| SvelteKit  | [`sveltekit/`](./sveltekit) | ✅ available | `handle` hook (`transformPageChunk`)  |
+| Framework | Directory                   | Status       | SSR hook used                               |
+| --------- | --------------------------- | ------------ | ------------------------------------------- |
+| Astro     | [`astro/`](./astro)         | ✅ available | `onRequest` middleware (`elementSSR`)       |
+| Nuxt      | [`nuxt/`](./nuxt)           | ✅ available | Nitro `render:response` hook (`elementSSR`) |
+| SvelteKit | [`sveltekit/`](./sveltekit) | ✅ available | `handle` hook (`transformPageChunk`)        |
 
 Each example is **fully self-contained** — its own `package.json`, its own copy of the
 local components, its own framework wiring — so it doubles as a copy-pasteable blueprint.
@@ -27,9 +27,9 @@ three moves — only the _names_ of the hooks differ:
    evaluated at import time). In each example this is the first import in the file that
    owns the SSR hook.
 2. **Wrap the framework's HTML response.** Take the rendered HTML the framework hands you
-   and run it through `renderToStringAsync(html, { registry, resolve })`, then return the
-   transformed HTML. Resolution composes component sources — typically element-library via
-   an eager `registry` plus the project's own components via `lazy(import.meta.glob(...))`
+   and run it through `await renderToString(html, { resolve })`, then return the transformed
+   HTML. Resolution composes component sources — typically element-library via an eager
+   `{ tag: Class }` map plus the project's own components via `lazy(import.meta.glob(...))`
    (see the package README's _Loading & resolving components_).
 3. **Load `define` on the client.** Ship a `<script>` that imports each component's
    `…/define` (or calls a local `define()`), so the pre-rendered elements upgrade and
@@ -37,11 +37,11 @@ three moves — only the _names_ of the hooks differ:
 
 Where each framework exposes those:
 
-| Step                | Astro                              | Nuxt (Nitro)                         | SvelteKit                              |
-| ------------------- | ---------------------------------- | ------------------------------------ | -------------------------------------- |
-| Owns the SSR hook   | `src/middleware.js`                | `server/plugins/element-ssr.js`      | `src/hooks.server.js`                  |
-| Gets the HTML       | `(await next()).text()`            | `render:response` body               | `transformPageChunk({ html })`         |
-| Returns transformed | new `Response(transformed, …)`     | mutate `response.body`               | return the transformed chunk           |
+| Step                | Astro                          | Nuxt (Nitro)                    | SvelteKit                      |
+| ------------------- | ------------------------------ | ------------------------------- | ------------------------------ |
+| Owns the SSR hook   | `src/middleware.js`            | `server/plugins/element-ssr.js` | `src/hooks.server.js`          |
+| Gets the HTML       | `(await next()).text()`        | `render:response` body          | `transformPageChunk({ html })` |
+| Returns transformed | new `Response(transformed, …)` | mutate `response.body`          | return the transformed chunk   |
 
 ### Framework adapters
 
@@ -49,16 +49,16 @@ Step 2 is small and repetitive, so the package ships a thin **adapter** per fram
 it for you, published as a stable subpath export and living under
 [`src/adapters/`](../src/adapters):
 
-| Adapter export | Status      | What it gives you                                                        |
-| -------------- | ----------- | ------------------------------------------------------------------------ |
-| `…/astro`      | ✅ available | `elementSSR(options)` → an `onRequest` middleware                        |
-| `…/nuxt`       | ✅ available | `elementSSR(options)` → a Nitro `render:response` handler                |
-| `…/sveltekit`  | ✅ available | `elementSSR(options)` → a `handle` hook (`transformPageChunk`)           |
+| Adapter export | Status       | What it gives you                                              |
+| -------------- | ------------ | -------------------------------------------------------------- |
+| `…/astro`      | ✅ available | `elementSSR(options)` → an `onRequest` middleware              |
+| `…/nuxt`       | ✅ available | `elementSSR(options)` → a Nitro `render:response` handler      |
+| `…/sveltekit`  | ✅ available | `elementSSR(options)` → a `handle` hook (`transformPageChunk`) |
 
 Adapters that deal in `Response` objects (Astro, Nuxt) share one internal kernel,
 [`transformHtmlResponse`](../src/adapters/transform-response.js) — content-type gate, read the
-body, `renderToStringAsync`, re-wrap preserving status/headers. SvelteKit's `transformPageChunk`
-hands you the HTML **string** directly, so its adapter just calls `renderToStringAsync(html, opts)`
+body, `renderToString`, re-wrap preserving status/headers. SvelteKit's `transformPageChunk`
+hands you the HTML **string** directly, so its adapter just calls `renderToString(html, opts)`
 and needs no Response kernel. New adapters land **with** their example and a test — see the
 checklist below.
 
@@ -70,7 +70,7 @@ checklist below.
 2. Add the framework adapter under `src/adapters/<framework>.js`, export it as `./<framework>`
    in the package `exports`, and cover it with a test (mirror `test/astro.test.js`). Reuse
    `transformHtmlResponse` if the framework is `Response`-based; otherwise call
-   `renderToStringAsync` directly. Then implement the three moves above in the example's SSR hook,
+   `renderToString` directly. Then implement the three moves above in the example's SSR hook,
    using that adapter.
 3. Reuse the two local components from `astro/src/components` (`x-counter`, a shadow/DSD
    component, and `x-greeting`, a light-DOM one) so every example demonstrates both render

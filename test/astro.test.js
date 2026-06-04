@@ -13,7 +13,7 @@ const htmlNext = (body) => () =>
 
 describe("elementSSR (astro middleware)", () => {
   it("pre-renders components from a static registry", async () => {
-    const onRequest = elementSSR({ registry: { "el-button": Button } });
+    const onRequest = elementSSR({ resolve: { "el-button": Button } });
     const res = await onRequest({}, htmlNext("<el-button>Save</el-button>"));
     expect(await res.text()).toContain('<template shadowrootmode="open">');
   });
@@ -28,7 +28,7 @@ describe("elementSSR (astro middleware)", () => {
   });
 
   it("preserves status and headers from the wrapped response", async () => {
-    const onRequest = elementSSR({ registry: { "el-button": Button } });
+    const onRequest = elementSSR({ resolve: { "el-button": Button } });
     const next = () =>
       Promise.resolve(
         new Response("<el-button>x</el-button>", {
@@ -45,7 +45,7 @@ describe("elementSSR (astro middleware)", () => {
   });
 
   it("passes non-HTML responses through untouched", async () => {
-    const onRequest = elementSSR({ registry: { "el-button": Button } });
+    const onRequest = elementSSR({ resolve: { "el-button": Button } });
     const json = '{"el-button":true}';
     const next = () =>
       Promise.resolve(

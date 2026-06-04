@@ -1,4 +1,4 @@
-import { renderToStringAsync } from "../render-to-string.js";
+import { renderToString } from "../render-to-string.js";
 
 /**
  * Run an HTML HTTP `Response` through the renderer, preserving its status, status text and
@@ -8,15 +8,14 @@ import { renderToStringAsync } from "../render-to-string.js";
  * hook hands you (or lets you return) a `Response`, e.g. Astro's `onRequest` middleware. A new
  * such adapter is typically a one-liner over this helper (see {@link ./astro.js}); frameworks that
  * instead give you the HTML *string* directly (e.g. SvelteKit's `transformPageChunk`) should call
- * {@link renderToStringAsync} on that string and skip this entirely.
+ * {@link renderToString} on that string and skip this entirely.
  *
  * @param {Response} response - the framework's rendered response
  * @param {{
- *   registry?: import('../render-to-string.js').Registry,
  *   resolve?: import('../render-to-string.js').Source | import('../render-to-string.js').Source[],
  *   onUnresolved?: (tag: string) => void,
  *   serializeState?: boolean,
- * }} [options] - forwarded to {@link renderToStringAsync}
+ * }} [options] - forwarded to {@link renderToString}
  * @return {Promise<Response>} the original response if non-HTML, else a new one with the same
  *   status/headers and the custom elements pre-rendered
  */
@@ -25,7 +24,7 @@ export async function transformHtmlResponse(response, options) {
   if (!contentType.includes("text/html")) return response;
 
   const html = await response.text();
-  const transformed = await renderToStringAsync(html, options);
+  const transformed = await renderToString(html, options);
 
   return new Response(transformed, {
     status: response.status,

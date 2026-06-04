@@ -23,7 +23,7 @@ const resolveWithChunks =
 
 describe("elementSSR (sveltekit handle)", () => {
   it("pre-renders components from a static registry", async () => {
-    const handle = elementSSR({ registry: { "el-button": Button } });
+    const handle = elementSSR({ resolve: { "el-button": Button } });
     const out = await handle({
       event: {},
       resolve: resolveWithChunks("<el-button>Save</el-button>"),
@@ -44,7 +44,7 @@ describe("elementSSR (sveltekit handle)", () => {
   });
 
   it("buffers chunks and transforms the whole document once, on the final chunk", async () => {
-    const handle = elementSSR({ registry: { "el-button": Button } });
+    const handle = elementSSR({ resolve: { "el-button": Button } });
     // The element is split across two chunks — only buffering the full document can render it.
     const out = await handle({
       event: {},

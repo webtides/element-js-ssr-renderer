@@ -14,7 +14,7 @@ const htmlResponse = (body, headers = { "content-type": "text/html" }) => ({
 
 describe("elementSSR (nuxt render:response hook)", () => {
   it("pre-renders components from a static registry, mutating response.body in place", async () => {
-    const onResponse = elementSSR({ registry: { "el-button": Button } });
+    const onResponse = elementSSR({ resolve: { "el-button": Button } });
     const response = htmlResponse("<el-button>Save</el-button>");
 
     await onResponse(response);
@@ -32,7 +32,7 @@ describe("elementSSR (nuxt render:response hook)", () => {
   });
 
   it("passes non-HTML responses through untouched", async () => {
-    const onResponse = elementSSR({ registry: { "el-button": Button } });
+    const onResponse = elementSSR({ resolve: { "el-button": Button } });
     const json = '{"el-button":true}';
     const response = htmlResponse(json, { "content-type": "application/json" });
 
@@ -41,7 +41,7 @@ describe("elementSSR (nuxt render:response hook)", () => {
   });
 
   it("leaves non-string bodies (streams, buffers) untouched", async () => {
-    const onResponse = elementSSR({ registry: { "el-button": Button } });
+    const onResponse = elementSSR({ resolve: { "el-button": Button } });
     const body = Buffer.from("<el-button>x</el-button>");
     const response = { body, headers: { "content-type": "text/html" } };
 

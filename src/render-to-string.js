@@ -379,7 +379,7 @@ function defaultUnresolvedWarning() {
 /**
  * Parse `html`, pre-render every custom element found in `registry`, and stringify. Shared by the
  * sync and async entry points; pure over (`html`, `registry`), so the async path can call it
- * repeatedly with a growing registry (see `renderToStringAsync`).
+ * repeatedly with a growing registry (see {@link renderToString}'s resolution fixpoint).
  * @param {string} html
  * @param {Registry} registry
  * @param {(tag: string) => void} [onUnresolved]
@@ -409,45 +409,6 @@ function runTransform(html, registry, onUnresolved, serializeState) {
 }
 
 /**
- * Pre-render every registered custom element found in an HTML string.
- *
- * Shadow-DOM components are emitted as Declarative Shadow DOM (`<template shadowrootmode="open">`)
- * with the global styles they adopt (per element-js' `adoptGlobalStyles` option) plus their own
- * styles inlined; light-DOM components have their template (and styles) rendered into place. Both
- * carry element-js' `<!--template-part-->` hydration markers, so on the client the elements hydrate
- * rather than render from scratch. Components with an empty template (behavioral wrappers) and
- * unregistered tags are left untouched. Processing is recursive, covering nested custom elements in
- * both slotted content and generated shadow content.
- *
- * This is the synchronous path: every component must already be loaded and listed in `registry`.
- * For lazily-loaded or multi-source components, use {@link renderToStringAsync}.
- *
- * When `serializeState` is enabled, each rendered component is also stamped with a deterministic
- * `ejs:key` and its state collected into a single `<script type="ejs/json">` appended to the body, so
- * the client restores server state on hydration instead of re-deriving from defaults (T-007). The
- * DOM shim must be imported before any component module for this (and SSR generally) to work.
- *
- * @param {string} html - an HTML document or fragment (e.g. a framework's rendered response)
- * @param {{ registry?: Registry, onUnresolved?: (tag: string) => void, serializeState?: boolean }} [options]
- *   `onUnresolved` is called for each custom-element-looking tag (contains `-`) not in `registry`;
- *   it defaults to a dev-only warning. Pass `() => {}` to silence (e.g. for client-only tags).
- *   `serializeState` (default `false`) opts into client state transport.
- * @return {string} the HTML with custom elements pre-rendered
- */
-export function renderToString(
-  html,
-  { registry = {}, onUnresolved, serializeState = false } = {},
-) {
-  setSerializeStateConfig(serializeState);
-  return runTransform(
-    html,
-    registry,
-    onUnresolved ?? defaultUnresolvedWarning(),
-    serializeState,
-  );
-}
-
-/**
  * A lazily-loaded component map. Each value imports its module (or returns a class) on demand;
  * `() => import('<literal>')` is plain ESM that a bundler can code-split and bare Node ESM can run,
  * and is exactly what Vite's `import.meta.glob('./components/*.js')` produces. Keys may be tags or
@@ -458,7 +419,7 @@ export function renderToString(
  * importer map fits (a custom convention, a remote lookup, etc.).
  * @typedef {(tag: string) => (CustomElementConstructor | Promise<CustomElementConstructor | undefined> | undefined)} ResolveFn
  *
- * Anything {@link renderToStringAsync} can resolve a tag through: a static {@link Registry}, an
+ * Anything {@link renderToString} can resolve a tag through: a static {@link Registry}, an
  * importer map wrapped in {@link lazy}, or a {@link ResolveFn}.
  * @typedef {Registry | ReturnType<typeof lazy> | ResolveFn} Source
  */
@@ -540,40 +501,51 @@ function composeSources(sources) {
 }
 
 /**
- * Like {@link renderToString}, but resolves components lazily from one or more {@link Source}s, so
- * only the components actually present on the page are ever loaded — the cold-start / serverless /
- * edge path. The core never calls `import()` itself; the sources do.
+ * Pre-render every custom element found in an HTML string, resolving each tag through the
+ * {@link Source}(s) you pass as `resolve`.
  *
- * Resolution and rendering interleave as a fixpoint over the synchronous transform: each pass
- * renders with the registry resolved so far and reports the custom-element tags it couldn't resolve;
- * those are resolved (in parallel, each module once) and the pass repeats until nothing new appears.
- * This loads only on-page tags, deduplicates resolution, and — because it re-renders — also catches
- * custom elements that appear only inside a component's *generated* template, not just the input.
+ * Shadow-DOM components are emitted as Declarative Shadow DOM (`<template shadowrootmode="open">`)
+ * with the global styles they adopt (per element-js' `adoptGlobalStyles` option) plus their own
+ * styles inlined; light-DOM components have their template (and styles) rendered into place. Both
+ * carry element-js' `<!--template-part-->` hydration markers, so on the client the elements hydrate
+ * rather than render from scratch. Components with an empty template (behavioral wrappers) and
+ * unresolved tags are left untouched. Processing is recursive, covering nested custom elements in
+ * both slotted content and generated shadow content.
  *
- * @param {string} html
- * As with {@link renderToString}, `serializeState` opts into client state transport — emitting a
- * single `ejs/json` state script and per-component `ejs:key`s for hydration (T-007).
+ * Resolution is lazy: only the components actually present on the page are ever loaded (the
+ * cold-start / serverless / edge path), and the core never calls `import()` itself — the sources do.
+ * Resolution and rendering interleave as a fixpoint over an internal synchronous transform: each
+ * pass renders with the tags resolved so far and reports the ones it couldn't resolve; those are
+ * resolved (in parallel, each module once) and the pass repeats until nothing new appears. Because
+ * it re-renders, it also catches custom elements that appear only inside a component's *generated*
+ * template, not just the input.
  *
+ * When `serializeState` is enabled, each rendered component is also stamped with a deterministic
+ * `ejs:key` and its state collected into a single `<script type="ejs/json">` appended to the body, so
+ * the client restores server state on hydration instead of re-deriving from defaults (T-007). The
+ * DOM shim must be imported before any component module for this (and SSR generally) to work.
+ *
+ * @param {string} html - an HTML document or fragment (e.g. a framework's rendered response)
  * @param {{
- *   registry?: Registry,
  *   resolve?: Source | Source[],
  *   onUnresolved?: (tag: string) => void,
  *   serializeState?: boolean,
  * }} [options]
- *   `registry` is the lowest-precedence source; `resolve` sources override it, later-wins within the
- *   array. `onUnresolved` is called once per custom-element tag that no source could resolve; it
- *   defaults to a dev-only warning (pass `() => {}` to silence). `serializeState` (default `false`)
- *   opts into client state transport.
+ *   `resolve` is one {@link Source} or an array of them — a static `{ tag: Class }` registry, a
+ *   {@link lazy} importer map, or a {@link ResolveFn} — composed later-wins on a tag clash.
+ *   `onUnresolved` is called once per custom-element tag that no source could resolve; it defaults to
+ *   a dev-only warning (pass `() => {}` to silence). `serializeState` (default `false`) opts into
+ *   client state transport.
  * @return {Promise<string>} the HTML with custom elements pre-rendered
  */
-export async function renderToStringAsync(
+export async function renderToString(
   html,
-  { registry = {}, resolve, onUnresolved, serializeState = false } = {},
+  { resolve, onUnresolved, serializeState = false } = {},
 ) {
   setSerializeStateConfig(serializeState);
-  const extra =
+  const sources =
     resolve == null ? [] : Array.isArray(resolve) ? resolve : [resolve];
-  const resolver = composeSources([registry, ...extra]);
+  const resolver = composeSources(sources);
   const warn = onUnresolved ?? defaultUnresolvedWarning();
 
   const resolved = {}; // tag -> class; the registry handed to each transform pass, growing each time

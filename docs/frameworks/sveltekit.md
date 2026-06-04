@@ -2,7 +2,7 @@
 
 Wire the `handle` hook from your `src/hooks.server.{js,ts}` so you control import order. Unlike Astro,
 SvelteKit hands the adapter the rendered HTML **string** (via `transformPageChunk`), so it calls
-`renderToStringAsync` directly — buffering the page's chunks and transforming the whole document once, on the
+`renderToString` directly — buffering the page's chunks and transforming the whole document once, on the
 final chunk:
 
 ```js
@@ -13,8 +13,10 @@ import { lazy } from "@webtides/element-js-ssr-renderer";
 import Button from "@webtides/element-library/button";
 
 export const handle = elementSSR({
-  registry: { "el-button": Button }, // eager element-library components
-  resolve: lazy(import.meta.glob("./components/*.js")), // this project's — loaded on demand
+  resolve: [
+    { "el-button": Button }, // eager element-library components
+    lazy(import.meta.glob("./components/*.js")), // this project's — loaded on demand
+  ],
 });
 ```
 
@@ -32,7 +34,7 @@ shadow components to adopt in `app.html` as plain CSS. See [Style handling](/con
 
 A complete, runnable version lives in
 [`examples/sveltekit/`](https://github.com/webtides/element-js-ssr-renderer/tree/main/examples/sveltekit) —
-an `@sveltejs/adapter-node` app composing element-library components (eager registry) with its own
+an `@sveltejs/adapter-node` app composing element-library components (an eager static map) with its own
 (`lazy(import.meta.glob(...))`), covering both the shadow (DSD) and light-DOM paths.
 
 ```bash

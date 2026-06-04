@@ -24,11 +24,12 @@ export default defineNitroPlugin(async (nitroApp) => {
     await import("@webtides/element-library/notification");
 
   // This example composes two component sources to show the headline resolution
-  // feature (T-008):
+  // feature (T-008) — `resolve` takes an array, later sources win on a tag clash:
   //
-  //   • a static `registry` — element-library components, eagerly imported above;
-  //   • a lazy `resolve` source — this project's own components under `./elements`,
-  //     imported on demand so only the ones actually on a page are ever loaded.
+  //   • a static `{ tag: Class }` source — element-library components, eagerly
+  //     imported above;
+  //   • a lazy source — this project's own components under `./elements`, imported
+  //     on demand so only the ones actually on a page are ever loaded.
   //
   // Unlike the Astro / SvelteKit examples, we can't use
   // `lazy(import.meta.glob('./elements/*.js'))`: `import.meta.glob` is a Vite
@@ -45,11 +46,13 @@ export default defineNitroPlugin(async (nitroApp) => {
   nitroApp.hooks.hook(
     "render:response",
     elementSSR({
-      registry: {
-        "el-button": Button,
-        "el-notification": Notification,
-      },
-      resolve: lazy(localComponents),
+      resolve: [
+        {
+          "el-button": Button,
+          "el-notification": Notification,
+        },
+        lazy(localComponents),
+      ],
     }),
   );
 });

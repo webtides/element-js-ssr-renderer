@@ -21,6 +21,14 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-04 — Collapse resolution API: delete runtime resolvers, single async `renderToString` (T-017)
+
+**Tasks:** T-017
+
+- **Deleted the runtime Node resolvers** `fromDirectory` / `fromManifest` and the entire `./resolve/node` entry point (`src/resolve/node.js`, `test/resolve-node.test.js`, the package export). Rationale: in the bundled-JS-SSR world this package targets, runtime filesystem resolution is almost never the right tool — bundler users get `lazy(import.meta.glob(...))` for free, edge/bundled targets need the static `element-ssr gen` map anyway, and `fromManifest` was strictly dominated by `gen --manifest` (a CEM is a build artifact, so "runtime" bought nothing). The genuine niche (bundler-less Node server discovering components at runtime) didn't justify a maintained entry point carrying a path-traversal guard, `file:`-URL handling, and "never bundle for the edge" caveats. Producers drop from ~7 to 2: `lazy(import.meta.glob())` and `lazy(generatedMap)`.
+- **Collapsed `renderToString` + `renderToStringAsync` into one async `renderToString`**, and **dropped the separate `registry` option** — a `{ tag: Class }` map is already a valid `Source`, so it's passed via `resolve` like everything else. The whole surface is now: one `await renderToString(html, { resolve, onUnresolved, serializeState })`, where `resolve` is a `Source | Source[]` (static map · `lazy()` · `ResolveFn` · array, later-wins). All four adapters already ran on the async path; their option bags lose `registry` in lockstep. Breaking, done now while pre-release (0.0.1) keeps it cheap.
+- Updated all three example apps (`registry: {...}, resolve: lazy(...)` → `resolve: [{...}, lazy(...)]`), the test suite (sync `render` helper → async + `resolve`; merged the two render describes), and all docs (resolving-components, API reference, quick-start, installation, concepts, the three framework pages, README, example READMEs). Suite green at 51 (was 59 — the 8 resolve-node tests removed).
+
 ## 2026-06-04 — T-014 fixed upstream in element-library 0.1.2; full Nuxt build green
 
 **Tasks:** T-014

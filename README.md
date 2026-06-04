@@ -34,11 +34,12 @@ import { renderToString } from "@webtides/element-js-ssr-renderer";
 import Button from "@webtides/element-library/button";
 import InputField from "@webtides/element-library/input-field";
 
-const registry = { "el-button": Button, "el-input-field": InputField };
-
-const html = renderToString('<el-button variant="primary">Save</el-button>', {
-  registry,
-});
+const html = await renderToString(
+  '<el-button variant="primary">Save</el-button>',
+  {
+    resolve: { "el-button": Button, "el-input-field": InputField },
+  },
+);
 ```
 
 > **Import order matters.** Component classes are `class … extends HTMLElement`, evaluated at import time,

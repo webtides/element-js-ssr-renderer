@@ -6,8 +6,9 @@ import { transformHtmlResponse } from "./transform-response.js";
  * Use this from your `src/middleware.{js,ts}` so you control import order — the DOM shim must be
  * imported there first, before any component module is evaluated.
  *
- * Components are resolved through {@link import('../render-to-string.js').renderToStringAsync}, so
- * you can hand them over eagerly or lazily. A static registry loads everything up front:
+ * Components are resolved through {@link import('../render-to-string.js').renderToString} via the
+ * `resolve` option, so you can hand them over eagerly or lazily. A static `{ tag: Class }` source
+ * loads everything up front:
  *
  * ```js
  * // src/middleware.js
@@ -17,7 +18,7 @@ import { transformHtmlResponse } from "./transform-response.js";
  * import InputField from '@webtides/element-library/input-field';
  *
  * export const onRequest = elementSSR({
- *     registry: { 'el-button': Button, 'el-input-field': InputField },
+ *     resolve: { 'el-button': Button, 'el-input-field': InputField },
  * });
  * ```
  *
@@ -29,12 +30,12 @@ import { transformHtmlResponse } from "./transform-response.js";
  * import '@webtides/element-js-ssr-renderer/dom-shim';
  * import { elementSSR } from '@webtides/element-js-ssr-renderer/astro';
  * import { lazy } from '@webtides/element-js-ssr-renderer';
- * import libraryComponents from '@webtides/element-library/all.server.js';
+ * import Button from '@webtides/element-library/button';
  *
  * export const onRequest = elementSSR({
  *     resolve: [
- *         lazy(libraryComponents),                         // base components
- *         lazy(import.meta.glob('../components/*.js')),     // this project's — overrides the library
+ *         { 'el-button': Button },                          // eager base components
+ *         lazy(import.meta.glob('../components/*.js')),     // this project's — overrides the above
  *     ],
  * });
  * ```
@@ -47,7 +48,6 @@ import { transformHtmlResponse } from "./transform-response.js";
  * defaults; enable element-js' matching `serializeState` config on the client too.
  *
  * @param {{
- *   registry?: import('../render-to-string.js').Registry,
  *   resolve?: import('../render-to-string.js').Source | import('../render-to-string.js').Source[],
  *   onUnresolved?: (tag: string) => void,
  *   serializeState?: boolean,
@@ -55,7 +55,6 @@ import { transformHtmlResponse } from "./transform-response.js";
  * @return {(context: any, next: () => Promise<Response>) => Promise<Response>}
  */
 export function elementSSR({
-  registry = {},
   resolve,
   onUnresolved,
   serializeState = false,
@@ -63,7 +62,6 @@ export function elementSSR({
   return async (context, next) => {
     const response = await next();
     return transformHtmlResponse(response, {
-      registry,
       resolve,
       onUnresolved,
       serializeState,

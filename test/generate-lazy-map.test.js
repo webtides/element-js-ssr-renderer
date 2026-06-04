@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { renderToStringAsync, lazy } from "../src/index.js";
+import { renderToString, lazy } from "../src/index.js";
 import {
   entriesFromDirectory,
   entriesFromManifest,
@@ -101,7 +101,7 @@ describe("generateLazyMap (end-to-end)", () => {
     expect(entries.map((e) => e.tag)).toEqual(["el-fixture"]);
 
     const { default: map } = await import(pathToFileURL(out).href);
-    const html = await renderToStringAsync("<el-fixture></el-fixture>", {
+    const html = await renderToString("<el-fixture></el-fixture>", {
       resolve: lazy(map),
     });
     expect(html).toContain('<template shadowrootmode="open">');
@@ -116,7 +116,7 @@ describe("generateLazyMap (end-to-end)", () => {
       out,
     });
     const { default: map } = await import(pathToFileURL(out).href);
-    const html = await renderToStringAsync("<el-fixture></el-fixture>", {
+    const html = await renderToString("<el-fixture></el-fixture>", {
       resolve: lazy(map),
     });
     expect(html).toContain("fixture");

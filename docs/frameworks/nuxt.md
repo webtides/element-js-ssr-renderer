@@ -15,17 +15,17 @@ export default defineNitroPlugin((nitroApp) => {
   nitroApp.hooks.hook(
     "render:response",
     elementSSR({
-      registry: { "el-button": Button }, // eager element-library components
-      // Nitro isn't Vite, so `import.meta.glob` is unavailable — hand-write the importer map:
-      resolve: lazy({
-        "x-counter": () => import("../../elements/x-counter.js"),
-      }),
+      resolve: [
+        { "el-button": Button }, // eager element-library components
+        // Nitro isn't Vite, so `import.meta.glob` is unavailable — hand-write the importer map:
+        lazy({ "x-counter": () => import("../../elements/x-counter.js") }),
+      ],
     }),
   );
 });
 ```
 
-`elementSSR` runs on `renderToStringAsync`, so it takes the same sources as everywhere else (see
+`elementSSR` runs on `renderToString`, so it takes the same sources as everywhere else (see
 [Resolving components](/resolving-components)). The `render:response` hook hands you a plain response
 object (`{ body, headers, statusCode }`) rather than a web `Response` and you mutate it in place, so
 the adapter wraps `response.body`, runs it through the same internal `transformHtmlResponse` kernel
@@ -50,7 +50,7 @@ export default defineNuxtConfig({
 
 A complete, runnable version lives in
 [`examples/nuxt/`](https://github.com/webtides/element-js-ssr-renderer/tree/main/examples/nuxt) — a
-Nuxt app composing element-library components (eager registry) with its own (`lazy({...})`), covering
+Nuxt app composing element-library components (an eager static map) with its own (`lazy({...})`), covering
 both the shadow (DSD) and light-DOM paths.
 
 ```bash

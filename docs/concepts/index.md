@@ -18,14 +18,14 @@ are coerced the way element-js coerces them, and a bare boolean attribute (`<el-
 
 ## Three outcomes per element
 
-| The element is…                          | What happens                                                                 |
-| ---------------------------------------- | ---------------------------------------------------------------------------- |
-| A **shadow-DOM** component               | Rendered into `<template shadowrootmode="open">`; authored children stay in light DOM after it as slot content |
-| A **light-DOM** component                | Its rendered template replaces the element's children                        |
-| A **behavioral wrapper** (empty `template()`) | Left untouched, so its authored light-DOM children survive                   |
-| An **unresolved** custom-element tag     | Left untouched (and reported — see [unresolved tags](/resolving-components#unresolved-tags)) |
+| The element is…                               | What happens                                                                                                   |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| A **shadow-DOM** component                    | Rendered into `<template shadowrootmode="open">`; authored children stay in light DOM after it as slot content |
+| A **light-DOM** component                     | Its rendered template replaces the element's children                                                          |
+| A **behavioral wrapper** (empty `template()`) | Left untouched, so its authored light-DOM children survive                                                     |
+| An **unresolved** custom-element tag          | Left untouched (and reported — see [unresolved tags](/resolving-components#unresolved-tags))                   |
 
-A "behavioral wrapper" is a component that inherits the empty `` html`` `` template (e.g. `accordion-group`,
+A "behavioral wrapper" is a component that inherits the empty ` html` ``template (e.g.`accordion-group`,
 `tab-group`) — it has no markup of its own and only attaches behavior on the client, so the server leaves its
 children alone.
 
@@ -77,10 +77,10 @@ its property defaults on upgrade. That's fine when the markup already reflects t
 rendered a component with non-default values (a seeded counter, a pre-filled form, a shared store), you want the
 client to start from **those** values, not the defaults.
 
-Opt in with `serializeState: true` (on `renderToString` / `renderToStringAsync`, or the framework adapters):
+Opt in with `serializeState: true` (on `renderToString`, or the framework adapters):
 
 ```js
-renderToString(html, { registry, serializeState: true });
+await renderToString(html, { resolve, serializeState: true });
 ```
 
 With it enabled, the renderer mirrors element-js' own serialization format so the client restores state on

@@ -47,23 +47,23 @@ npm run build && npm run preview
 2. **Disable JavaScript and reload.** Everything still shows, styled — no flash
    of empty/unstyled content. (The counter buttons just won't do anything yet.)
 3. **Re-enable JavaScript.** Click the counter's **+ / −** buttons: they update.
-   That's element-js *hydrating* the pre-rendered DSD (matching the
+   That's element-js _hydrating_ the pre-rendered DSD (matching the
    `<!--template-part-->` markers in the SSR output) rather than re-rendering
    from scratch.
 
 ## How it's wired
 
-| File                          | Role                                                                            |
-| ----------------------------- | ------------------------------------------------------------------------------- |
-| `src/hooks.server.js`         | Imports the DOM shim first, then `elementSSR(...)` → a `handle` hook with both sources. |
-| `src/components/*.js`         | Local element-js components (default-export the class + a `define()`).          |
-| `src/app.html`                | The document shell + global styles/tokens (plain CSS the renderer can adopt).   |
-| `src/routes/+layout.svelte`   | The client hydration: `onMount` loads each component's `define`.                |
-| `src/routes/+page.svelte`     | Authors the custom elements as plain HTML.                                       |
-| `vite.config.js`              | `ssr.noExternal` for the element-js packages (keeps the shim import ordered first). |
-| `svelte.config.js`            | `@sveltejs/adapter-node`, so the `handle` hook runs per request.                |
+| File                        | Role                                                                                    |
+| --------------------------- | --------------------------------------------------------------------------------------- |
+| `src/hooks.server.js`       | Imports the DOM shim first, then `elementSSR(...)` → a `handle` hook with both sources. |
+| `src/components/*.js`       | Local element-js components (default-export the class + a `define()`).                  |
+| `src/app.html`              | The document shell + global styles/tokens (plain CSS the renderer can adopt).           |
+| `src/routes/+layout.svelte` | The client hydration: `onMount` loads each component's `define`.                        |
+| `src/routes/+page.svelte`   | Authors the custom elements as plain HTML.                                              |
+| `vite.config.js`            | `ssr.noExternal` for the element-js packages (keeps the shim import ordered first).     |
+| `svelte.config.js`          | `@sveltejs/adapter-node`, so the `handle` hook runs per request.                        |
 
 Unlike Astro/Nuxt (which hand the adapter a `Response`), SvelteKit's
 `transformPageChunk` gives the adapter the rendered HTML **string** directly, so
-the adapter calls `renderToStringAsync` on it — buffering chunks and transforming
+the adapter calls `renderToString` on it — buffering chunks and transforming
 the whole document once, on the final chunk.

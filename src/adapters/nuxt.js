@@ -14,9 +14,11 @@ import { transformHtmlResponse } from "./transform-response.js";
  *
  * export default defineNitroPlugin((nitroApp) => {
  *     nitroApp.hooks.hook('render:response', elementSSR({
- *         registry: { 'el-button': Button },                  // eager element-library components
- *         // Nitro is not Vite, so `import.meta.glob` is unavailable — hand-write the importer map:
- *         resolve: lazy({ 'x-counter': () => import('../../elements/x-counter.js') }),
+ *         resolve: [
+ *             { 'el-button': Button },                              // eager element-library components
+ *             // Nitro is not Vite, so `import.meta.glob` is unavailable — hand-write the importer map:
+ *             lazy({ 'x-counter': () => import('../../elements/x-counter.js') }),
+ *         ],
  *     }));
  * });
  * ```
@@ -35,7 +37,6 @@ import { transformHtmlResponse } from "./transform-response.js";
  * defaults; enable element-js' matching `serializeState` config on the client too.
  *
  * @param {{
- *   registry?: import('../render-to-string.js').Registry,
  *   resolve?: import('../render-to-string.js').Source | import('../render-to-string.js').Source[],
  *   onUnresolved?: (tag: string) => void,
  *   serializeState?: boolean,
@@ -44,12 +45,11 @@ import { transformHtmlResponse } from "./transform-response.js";
  *   a `render:response` hook handler
  */
 export function elementSSR({
-  registry = {},
   resolve,
   onUnresolved,
   serializeState = false,
 } = {}) {
-  const options = { registry, resolve, onUnresolved, serializeState };
+  const options = { resolve, onUnresolved, serializeState };
   return async (response) => {
     // Only HTML page bodies (a string) are renderable; skip streams, buffers, etc.
     if (typeof response?.body !== "string") return;

@@ -1,6 +1,6 @@
 import "../src/dom-shim.js"; // must precede any component import
 import { describe, it, expect, vi } from "vitest";
-import { renderToString, renderToStringAsync, lazy } from "../src/index.js";
+import { renderToString, lazy } from "../src/index.js";
 
 import Button from "@webtides/element-library/button";
 import InputField from "@webtides/element-library/input-field";
@@ -42,31 +42,31 @@ const registry = {
   "el-adopt-selector": AdoptSelector,
 };
 
-const render = (html) => renderToString(html, { registry });
+const render = (html) => renderToString(html, { resolve: registry });
 
 /** Extract the contents of the first declarative shadow root in `out`. */
 const shadowOf = (out) =>
   out.slice(out.indexOf("shadowrootmode"), out.indexOf("</template>"));
 
 describe("renderToString", () => {
-  it("emits Declarative Shadow DOM for a shadow component", () => {
-    const out = render('<el-button variant="primary">Save</el-button>');
+  it("emits Declarative Shadow DOM for a shadow component", async () => {
+    const out = await render('<el-button variant="primary">Save</el-button>');
     expect(out).toContain('<template shadowrootmode="open">');
     expect(out).toContain("<style");
     // the element-js hydration marker must be present so the client hydrates, not re-renders
     expect(out).toContain("<!--template-part-->");
   });
 
-  it("keeps slotted light-DOM content after the shadow template", () => {
-    const out = render("<el-button>Save</el-button>");
+  it("keeps slotted light-DOM content after the shadow template", async () => {
+    const out = await render("<el-button>Save</el-button>");
     const closeTemplate = out.indexOf("</template>");
     expect(closeTemplate).toBeGreaterThan(-1);
     // "Save" appears in light DOM, after the </template>
     expect(out.indexOf("Save", closeTemplate)).toBeGreaterThan(closeTemplate);
   });
 
-  it("reflects attributes into the rendered output", () => {
-    const out = render(
+  it("reflects attributes into the rendered output", async () => {
+    const out = await render(
       '<el-button variant="danger" disabled>Delete</el-button>',
     );
     const shadow = out.slice(
@@ -77,8 +77,8 @@ describe("renderToString", () => {
     expect(shadow.toLowerCase()).toContain("disabled");
   });
 
-  it("renders a light-DOM component in place (no shadow template)", () => {
-    const out = render(
+  it("renders a light-DOM component in place (no shadow template)", async () => {
+    const out = await render(
       '<el-input-field name="email" label="Email"></el-input-field>',
     );
     expect(out).not.toContain("shadowrootmode");
@@ -86,8 +86,8 @@ describe("renderToString", () => {
     expect(out).toContain("Email");
   });
 
-  it("inlines a light-DOM component's styles", () => {
-    const out = render(
+  it("inlines a light-DOM component's styles", async () => {
+    const out = await render(
       '<el-input-field name="email" label="Email"></el-input-field>',
     );
     expect(out).not.toContain("shadowrootmode");
@@ -95,8 +95,8 @@ describe("renderToString", () => {
     expect(out).toContain('<style id="EL-INPUT-FIELD0">');
   });
 
-  it("emits a light-DOM component's styles once across repeated instances", () => {
-    const out = render(
+  it("emits a light-DOM component's styles once across repeated instances", async () => {
+    const out = await render(
       '<el-input-field name="a"></el-input-field><el-input-field name="b"></el-input-field>',
     );
     // both instances render, but the shared style block is emitted a single time (T-006)
@@ -105,8 +105,8 @@ describe("renderToString", () => {
     expect(out.match(/<style id="EL-INPUT-FIELD0">/g)?.length).toBe(1);
   });
 
-  it("de-dupes identical adopted global styles within one shadow root", () => {
-    const out = render(
+  it("de-dupes identical adopted global styles within one shadow root", async () => {
+    const out = await render(
       '<style class="theme">.dup{}</style><style class="theme">.dup{}</style>' +
         "<el-adopt-selector></el-adopt-selector>",
     );
@@ -114,20 +114,20 @@ describe("renderToString", () => {
     expect(shadow.match(/\.dup\{\}/g)?.length).toBe(1);
   });
 
-  it("leaves behavioral wrappers (empty template) untouched", () => {
+  it("leaves behavioral wrappers (empty template) untouched", async () => {
     const input = "<el-accordion-group><div>child</div></el-accordion-group>";
-    const out = render(input);
+    const out = await render(input);
     expect(out).not.toContain("shadowrootmode");
     expect(out).toContain("<div>child</div>");
   });
 
-  it("leaves unregistered tags untouched", () => {
+  it("leaves unresolved tags untouched", async () => {
     const input = '<my-widget foo="bar"><span>hi</span></my-widget>';
-    expect(render(input)).toBe(input);
+    expect(await render(input)).toBe(input);
   });
 
-  it("adopts global styles into a shadow root (adoptGlobalStyles: true)", () => {
-    const out = render(
+  it("adopts global styles into a shadow root (adoptGlobalStyles: true)", async () => {
+    const out = await render(
       '<style class="theme">.theme{color:red}</style><el-adopt-all></el-adopt-all>',
     );
     const shadow = shadowOf(out);
@@ -139,15 +139,15 @@ describe("renderToString", () => {
     expect(out.indexOf('<style class="theme">')).toBeGreaterThan(-1);
   });
 
-  it("does not adopt global styles when adoptGlobalStyles is false", () => {
-    const out = render(
+  it("does not adopt global styles when adoptGlobalStyles is false", async () => {
+    const out = await render(
       "<style>.theme{color:red}</style><el-adopt-none></el-adopt-none>",
     );
     expect(shadowOf(out)).not.toContain(".theme{color:red}");
   });
 
-  it("adopts only matching global styles for a selector", () => {
-    const out = render(
+  it("adopts only matching global styles for a selector", async () => {
+    const out = await render(
       '<style class="theme">.themed{}</style><style class="other">.skipme{}</style>' +
         "<el-adopt-selector></el-adopt-selector>",
     );
@@ -156,15 +156,17 @@ describe("renderToString", () => {
     expect(shadow).not.toContain(".skipme{}");
   });
 
-  it("does not adopt styles scoped inside an existing template/shadow root", () => {
-    const out = render(
+  it("does not adopt styles scoped inside an existing template/shadow root", async () => {
+    const out = await render(
       "<template><style>.scoped{}</style></template><el-adopt-all></el-adopt-all>",
     );
     expect(shadowOf(out)).not.toContain(".scoped{}");
   });
 
-  it("recurses into slotted custom elements", () => {
-    const out = render("<el-button><el-button>nested</el-button></el-button>");
+  it("recurses into slotted custom elements", async () => {
+    const out = await render(
+      "<el-button><el-button>nested</el-button></el-button>",
+    );
     // two shadow templates: outer + nested
     expect(out.match(/shadowrootmode/g)?.length).toBe(2);
   });
@@ -198,16 +200,9 @@ class Blue extends TemplateElement {
   }
 }
 
-describe("renderToStringAsync", () => {
-  it("renders identically to the sync path for the same components", async () => {
-    const input = '<el-button variant="primary">Save</el-button>';
-    const sync = renderToString(input, { registry });
-    const out = await renderToStringAsync(input, { resolve: registry });
-    expect(out).toBe(sync);
-  });
-
+describe("renderToString — resolution sources", () => {
   it("resolves a component from a bare resolver function", async () => {
-    const out = await renderToStringAsync("<el-button>x</el-button>", {
+    const out = await renderToString("<el-button>x</el-button>", {
       resolve: (tag) => (tag === "el-button" ? Button : undefined),
     });
     expect(out).toContain('<template shadowrootmode="open">');
@@ -221,7 +216,7 @@ describe("renderToStringAsync", () => {
       "el-input-field": inputImporter,
     });
 
-    const out = await renderToStringAsync("<el-button>x</el-button>", {
+    const out = await renderToString("<el-button>x</el-button>", {
       resolve: source,
     });
 
@@ -234,14 +229,14 @@ describe("renderToStringAsync", () => {
     const source = lazy({
       "./components/el-button.js": () => Promise.resolve({ default: Button }),
     });
-    const out = await renderToStringAsync("<el-button>x</el-button>", {
+    const out = await renderToString("<el-button>x</el-button>", {
       resolve: source,
     });
     expect(out).toContain("shadowrootmode");
   });
 
   it("honors lazy() pathToTag and pick overrides", async () => {
-    const out = await renderToStringAsync("<el-button>x</el-button>", {
+    const out = await renderToString("<el-button>x</el-button>", {
       resolve: lazy(
         { "buttons/Btn.entry": () => Promise.resolve({ Btn: Button }) },
         { pathToTag: () => "el-button", pick: (mod) => mod.Btn },
@@ -251,7 +246,7 @@ describe("renderToStringAsync", () => {
   });
 
   it("lets a later source override an earlier one on a tag clash", async () => {
-    const out = await renderToStringAsync("<el-clash></el-clash>", {
+    const out = await renderToString("<el-clash></el-clash>", {
       resolve: [{ "el-clash": Red }, { "el-clash": Blue }],
     });
     const shadow = shadowOf(out);
@@ -260,7 +255,7 @@ describe("renderToStringAsync", () => {
   });
 
   it("resolves custom elements that appear only in generated templates", async () => {
-    const out = await renderToStringAsync("<el-wrapper></el-wrapper>", {
+    const out = await renderToString("<el-wrapper></el-wrapper>", {
       resolve: lazy({
         "el-wrapper": () => Promise.resolve({ default: Wrapper }),
         "el-button": () => Promise.resolve({ default: Button }),
@@ -272,10 +267,10 @@ describe("renderToStringAsync", () => {
 
   it("reports genuinely unresolved tags once, but not resolved ones", async () => {
     const onUnresolved = vi.fn();
-    await renderToStringAsync(
-      "<my-widget></my-widget><el-button>x</el-button>",
-      { resolve: { "el-button": Button }, onUnresolved },
-    );
+    await renderToString("<my-widget></my-widget><el-button>x</el-button>", {
+      resolve: { "el-button": Button },
+      onUnresolved,
+    });
     expect(onUnresolved).toHaveBeenCalledWith("my-widget");
     expect(onUnresolved).not.toHaveBeenCalledWith("el-button");
     expect(onUnresolved).toHaveBeenCalledTimes(1);
@@ -283,59 +278,49 @@ describe("renderToStringAsync", () => {
 });
 
 describe("unresolved-tag warning (dev)", () => {
-  it("warns once for an unresolved custom-element tag, naming it", () => {
+  it("warns once for an unresolved custom-element tag, naming it", async () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    render("<el-button>x</el-button><my-unknown></my-unknown>");
+    await render("<el-button>x</el-button><my-unknown></my-unknown>");
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0][0]).toContain("<my-unknown>");
     spy.mockRestore();
   });
 
-  it("warns once per tag even across repeated instances", () => {
+  it("warns once per tag even across repeated instances", async () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    render("<my-unknown></my-unknown><my-unknown></my-unknown>");
+    await render("<my-unknown></my-unknown><my-unknown></my-unknown>");
     expect(spy).toHaveBeenCalledTimes(1);
     spy.mockRestore();
   });
 
-  it("does not warn for resolved tags or plain elements", () => {
+  it("does not warn for resolved tags or plain elements", async () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    render("<el-button>x</el-button><div></div>");
+    await render("<el-button>x</el-button><div></div>");
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
 
-  it("can be silenced with a custom onUnresolved", () => {
+  it("can be silenced with a custom onUnresolved", async () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    renderToString("<my-unknown></my-unknown>", {
-      registry,
+    await renderToString("<my-unknown></my-unknown>", {
+      resolve: registry,
       onUnresolved: () => {},
     });
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
 
-  it("stays silent in production", () => {
+  it("stays silent in production", async () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const prev = process.env.NODE_ENV;
     process.env.NODE_ENV = "production";
     try {
-      render("<my-unknown></my-unknown>");
+      await render("<my-unknown></my-unknown>");
       expect(spy).not.toHaveBeenCalled();
     } finally {
       process.env.NODE_ENV = prev;
       spy.mockRestore();
     }
-  });
-
-  it("warns through the async path too", async () => {
-    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await renderToStringAsync("<my-unknown></my-unknown>", {
-      resolve: { "el-button": Button },
-    });
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy.mock.calls[0][0]).toContain("<my-unknown>");
-    spy.mockRestore();
   });
 });
 
@@ -383,41 +368,42 @@ const stateOf = (out) => {
 };
 
 describe("state transport (serializeState)", () => {
-  it("does not stamp keys or emit a state script by default", () => {
-    const out = renderToString('<state-counter count="3"></state-counter>', {
-      registry: stateRegistry,
-    });
+  it("does not stamp keys or emit a state script by default", async () => {
+    const out = await renderToString(
+      '<state-counter count="3"></state-counter>',
+      { resolve: stateRegistry },
+    );
     expect(out).not.toContain("ejs:key");
     expect(out).not.toContain("ejs/json");
   });
 
-  it("stamps a deterministic ejs:key on each rendered host", () => {
-    const out = renderToString(
+  it("stamps a deterministic ejs:key on each rendered host", async () => {
+    const out = await renderToString(
       "<state-counter></state-counter><state-counter></state-counter>",
-      { registry: stateRegistry, serializeState: true },
+      { resolve: stateRegistry, serializeState: true },
     );
     expect(out).toContain('ejs:key="state-counter-0"');
     expect(out).toContain('ejs:key="state-counter-1"');
   });
 
-  it("is deterministic — identical input yields identical output", () => {
+  it("is deterministic — identical input yields identical output", async () => {
     const input =
       '<state-counter count="1"></state-counter><state-counter count="2"></state-counter>';
-    const a = renderToString(input, {
-      registry: stateRegistry,
+    const a = await renderToString(input, {
+      resolve: stateRegistry,
       serializeState: true,
     });
-    const b = renderToString(input, {
-      registry: stateRegistry,
+    const b = await renderToString(input, {
+      resolve: stateRegistry,
       serializeState: true,
     });
     expect(a).toBe(b);
   });
 
-  it("emits one ejs/json script whose state matches the server values", () => {
-    const out = renderToString(
+  it("emits one ejs/json script whose state matches the server values", async () => {
+    const out = await renderToString(
       '<state-counter count="3" label="Pears"></state-counter>',
-      { registry: stateRegistry, serializeState: true },
+      { resolve: stateRegistry, serializeState: true },
     );
     expect(out.match(/type="ejs\/json"/g)?.length).toBe(1);
     const state = stateOf(out);
@@ -425,22 +411,25 @@ describe("state transport (serializeState)", () => {
     expect(state["state-counter-0"]).toEqual({ count: 3, label: "Pears" });
   });
 
-  it("restores a round-tripped component to its server state", () => {
-    const out = renderToString('<state-counter count="7"></state-counter>', {
-      registry: stateRegistry,
-      serializeState: true,
-    });
+  it("restores a round-tripped component to its server state", async () => {
+    const out = await renderToString(
+      '<state-counter count="7"></state-counter>',
+      { resolve: stateRegistry, serializeState: true },
+    );
     const state = stateOf(out);
     // simulate element-js' restoreState: Object.assign(instance, state[key])
-    const restored = Object.assign(new StateCounter(), state["state-counter-0"]);
+    const restored = Object.assign(
+      new StateCounter(),
+      state["state-counter-0"],
+    );
     expect(restored.count).toBe(7);
     expect(restored.label).toBe("Apples");
   });
 
-  it("serializes a shared Store once, referenced by each host", () => {
-    const out = renderToString(
+  it("serializes a shared Store once, referenced by each host", async () => {
+    const out = await renderToString(
       "<cart-badge></cart-badge><cart-badge></cart-badge>",
-      { registry: stateRegistry, serializeState: true },
+      { resolve: stateRegistry, serializeState: true },
     );
     const state = stateOf(out);
     // both hosts reference the store by key; the store's state lives once under that key
@@ -449,17 +438,5 @@ describe("state transport (serializeState)", () => {
     expect(state.cart).toEqual({ items: 2 });
     // the store body is emitted a single time, not once per referencing host
     expect(out.match(/"items":2/g)?.length).toBe(1);
-  });
-
-  it("transports state through the async path too", async () => {
-    const out = await renderToStringAsync(
-      '<state-counter count="9"></state-counter>',
-      { resolve: stateRegistry, serializeState: true },
-    );
-    expect(out).toContain('ejs:key="state-counter-0"');
-    expect(stateOf(out)["state-counter-0"]).toEqual({
-      count: 9,
-      label: "Apples",
-    });
   });
 });

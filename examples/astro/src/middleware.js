@@ -13,20 +13,22 @@ import Button from "@webtides/element-library/button";
 import Notification from "@webtides/element-library/notification";
 
 // This example composes two component sources to show the headline resolution
-// feature (T-008):
+// feature (T-008) — `resolve` takes an array, later sources win on a tag clash:
 //
-//   • a static `registry` — element-library components, eagerly imported above;
-//   • a lazy `resolve` source — this project's own components under
-//     `./components/*.js`, code-split by Vite's `import.meta.glob` and imported
-//     on demand, so only the ones actually on a page are ever loaded.
+//   • a static `{ tag: Class }` source — element-library components, eagerly
+//     imported above;
+//   • a lazy source — this project's own components under `./components/*.js`,
+//     code-split by Vite's `import.meta.glob` and imported on demand, so only the
+//     ones actually on a page are ever loaded.
 //
 // `lazy` derives each tag from the file's basename (`x-counter.js` → `x-counter`)
-// and picks the class from the module's default export. Later sources win on a
-// tag clash, so a local component could override a library one.
+// and picks the class from the module's default export.
 export const onRequest = elementSSR({
-  registry: {
-    "el-button": Button,
-    "el-notification": Notification,
-  },
-  resolve: lazy(import.meta.glob("./components/*.js")),
+  resolve: [
+    {
+      "el-button": Button,
+      "el-notification": Notification,
+    },
+    lazy(import.meta.glob("./components/*.js")),
+  ],
 });

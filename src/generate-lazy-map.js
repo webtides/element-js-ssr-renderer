@@ -1,18 +1,20 @@
 /**
  * Build-time generator for a **static, bundler-traceable** lazy importer map — the no-hand-writing
- * answer for targets where the runtime resolvers (`fromDirectory` / `fromManifest`) can't reach the
- * component files: bundled servers (Nuxt/Nitro, webpack) and the edge. It emits a module of literal
- * `() => import('./x-foo.js')` thunks, which a bundler can statically trace and code-split, then you
- * wrap it in {@link lazy} like any importer map.
+ * way to turn a folder (or a manifest) of components into the `{ tag: () => import(...) }` map that
+ * `lazy()` consumes. It runs at build time (filesystem + path work, Node-only), reads the component
+ * files, and emits a module of literal `() => import('./x-foo.js')` thunks, which a bundler can
+ * statically trace and code-split — so it works everywhere, including bundled servers (Nuxt/Nitro,
+ * webpack) and the edge, where an `import()` built from a tag at runtime could never be traced. You
+ * then wrap the emitted map in {@link lazy} like any importer map.
  *
- * Two input modes, mirroring the two runtime resolvers:
- *   - **directory** — flat scan by filename convention (`x-counter.js` → `x-counter`), like
- *     `fromDirectory`. Tags must contain a hyphen (custom-element spec), so helper files are skipped.
- *   - **manifest** — a `custom-elements.json` (CEM), like `fromManifest`. Handles nested layouts
- *     (e.g. element-library's `src/components/<name>/<name>.js`) via the manifest's module paths.
+ * Two input modes:
+ *   - **directory** — flat scan by filename convention (`x-counter.js` → `x-counter`). Tags must
+ *     contain a hyphen (custom-element spec), so helper files are skipped.
+ *   - **manifest** — a `custom-elements.json` (CEM). Handles nested layouts (e.g. element-library's
+ *     `src/components/<name>/<name>.js`) via the manifest's module paths.
  *
- * Node-only (filesystem + path work) and meant for a dev/build step, never imported at render time.
- * Exposed programmatically (this module) and as the `element-ssr gen` CLI (`bin/element-ssr.js`).
+ * Meant for a dev/build step, never imported at render time. Exposed programmatically (this module)
+ * and as the `element-ssr gen` CLI (`bin/element-ssr.js`).
  *
  * @typedef {import('./render-to-string.js').ImporterMap} ImporterMap
  */
@@ -82,7 +84,7 @@ export function entriesFromDirectory(
 
 /**
  * Discover `{ tag, file }` entries from a parsed `custom-elements.json`. Module paths are
- * package-relative, so `base` must point at the package root (see `fromManifest`).
+ * package-relative, so `base` must point at the package root.
  *
  * @param {{ modules?: Array<{ path: string, declarations?: Array<{ customElement?: boolean, tagName?: string }> }> }} manifest
  * @param {{ base: string | URL }} options

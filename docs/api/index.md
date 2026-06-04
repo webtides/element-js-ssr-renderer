@@ -5,42 +5,14 @@ All signatures below are the public surface exported from the package's subpaths
 
 ## `renderToString(html, options?)`
 
-From `@webtides/element-js-ssr-renderer`. The **synchronous**, registry-only path: every component must
-already be loaded.
+From `@webtides/element-js-ssr-renderer`. **Async.** Pre-renders every custom element in `html`, resolving
+each tag through the [`Source`](#source)(s) you pass as `resolve`, so only the components actually on the page
+are ever loaded — the cold-start / serverless / edge path.
 
 ```ts
 renderToString(
   html: string,
   options?: {
-    registry?: Registry,
-    onUnresolved?: (tag: string) => void,
-    serializeState?: boolean,
-  },
-): string
-```
-
-| Param                    | Description                                                                                              |
-| ------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `html`                   | An HTML document or fragment (e.g. a framework's rendered response).                                     |
-| `options.registry`       | A [`Registry`](#registry) of already-loaded components. Defaults to `{}`.                                |
-| `options.onUnresolved`   | Called for each custom-element-looking tag (contains `-`) not in `registry`. See [below](#onunresolved). |
-| `options.serializeState` | Opt into [client state transport](#serializestate). Defaults to `false`.                                 |
-
-**Returns** the HTML with every registered custom element pre-rendered in place.
-
-For lazily-loaded or multi-source components, use [`renderToStringAsync`](#rendertostringasync-html-options).
-
-## `renderToStringAsync(html, options?)`
-
-From `@webtides/element-js-ssr-renderer`. Like `renderToString`, but resolves components lazily from one or
-more [`Source`](#source)s, so only the components actually on the page are ever loaded — the cold-start /
-serverless / edge path. Required whenever resolution is lazy.
-
-```ts
-renderToStringAsync(
-  html: string,
-  options?: {
-    registry?: Registry,
     resolve?: Source | Source[],
     onUnresolved?: (tag: string) => void,
     serializeState?: boolean,
@@ -48,18 +20,17 @@ renderToStringAsync(
 ): Promise<string>
 ```
 
-| Param                    | Description                                                                                                           |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `html`                   | An HTML document or fragment.                                                                                         |
-| `options.registry`       | Lowest-precedence [`Registry`](#registry) source.                                                                     |
-| `options.resolve`        | One [`Source`](#source) or an array of them. `resolve` sources override `registry`; within the array, **later wins**. |
-| `options.onUnresolved`   | Called once per custom-element tag no source could resolve. See [below](#onunresolved).                               |
-| `options.serializeState` | Opt into [client state transport](#serializestate). Defaults to `false`.                                              |
+| Param                    | Description                                                                                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `html`                   | An HTML document or fragment (e.g. a framework's rendered response).                                                                                                                             |
+| `options.resolve`        | One [`Source`](#source) or an array of them — a static `{ tag: Class }` map, a [`lazy`](#lazy-map-options) importer map, or a [`ResolveFn`](#resolvefn). Composed **later-wins** on a tag clash. |
+| `options.onUnresolved`   | Called once per custom-element-looking tag (contains `-`) that no source resolves. See [below](#onunresolved).                                                                                   |
+| `options.serializeState` | Opt into [client state transport](#serializestate). Defaults to `false`.                                                                                                                         |
 
-**Returns** a `Promise` of the pre-rendered HTML.
+**Returns** a `Promise` of the HTML with every resolved custom element pre-rendered in place.
 
-Resolution and rendering interleave as a fixpoint: each pass renders with the registry resolved so far and
-reports unresolved tags; those are resolved in parallel (each module imported once) and the pass repeats
+Resolution and rendering interleave as a fixpoint: each pass renders with the tags resolved so far and reports
+the ones it couldn't resolve; those are resolved in parallel (each module imported once) and the pass repeats
 until nothing new appears. Because it re-renders, it also catches custom elements that appear only inside a
 component's **generated** template, not just in the input.
 
@@ -86,70 +57,9 @@ lazy(
 | `options.pathToTag` | basename without extension (`./x/el-button.js` → `el-button`) | Derives a tag from each map key. Leaves already-tag keys untouched.       |
 | `options.pick`      | the module's `default` export                                 | Selects the class from a resolved module.                                 |
 
-## `fromDirectory(dir, options?)`
-
-From `@webtides/element-js-ssr-renderer/resolve/node` — a **Node-only** entry point. Returns a
-[`ResolveFn`](#resolvefn) that imports a tag's module from a directory on demand
-(`<el-button>` → `<dir>/el-button.js`).
-
-```ts
-fromDirectory(
-  dir: string | URL,
-  options?: {
-    tagToPath?: (tag: string) => string,
-    pick?: (mod: object, tag: string) => CustomElementConstructor,
-  },
-): ResolveFn
-```
-
-| Param               | Description                                                              |
-| ------------------- | ------------------------------------------------------------------------ |
-| `dir`               | Base directory: a path, a `file:` URL string, or a `URL` instance.       |
-| `options.tagToPath` | Maps a tag to a module path relative to `dir`. Default appends `.js`.    |
-| `options.pick`      | Selects the class from a resolved module. Default: the `default` export. |
-
-It builds the import path from the tag at runtime, caches per-tag imports, guards against path traversal, and
-propagates module errors but treats a missing file as a pass-through miss (the tag stays unresolved).
-
-::: warning Node only
-Runtime-string imports can't be statically analyzed by a bundler — never bundle this for the edge. For
-bundled / edge targets use `lazy(import.meta.glob(...))`. See
-[Resolving components](/resolving-components#_3-resolver-function).
-:::
-
-## `fromManifest(manifest, options)`
-
-From `@webtides/element-js-ssr-renderer/resolve/node` — a **Node-only** entry point. Returns a
-[`ResolveFn`](#resolvefn) that imports a tag's class module on demand from a parsed
-[Custom Elements Manifest](https://github.com/webcomponents/custom-elements-manifest)
-(`custom-elements.json`). Lets any CEM-shipping package — e.g. `@webtides/element-library` — act as
-a lazy source with no hand-built registry.
-
-```ts
-fromManifest(
-  manifest: object, // parsed custom-elements.json
-  options: {
-    base: string | URL,
-    pick?: (mod: object, tag: string) => CustomElementConstructor,
-  },
-): ResolveFn
-```
-
-| Param          | Description                                                                                                                                                            |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `manifest`     | The parsed manifest. Each `customElement` declaration with a `tagName` maps to its module `path`.                                                                      |
-| `options.base` | **Required.** Package root the manifest's relative paths resolve against. Anchor it to an exported subpath: `new URL('.', import.meta.resolve('<pkg>/package.json'))`. |
-| `options.pick` | Selects the class from a resolved module. Default: the `default` export.                                                                                               |
-
-Caches per-tag imports; a tag absent from the manifest is a pass-through miss; a module error propagates.
-
-::: warning Node only
-Same constraint as `fromDirectory` — runtime-string imports, never bundle for the edge.
-:::
-
 ## `elementSSR(options?)`
 
-A framework adapter that does the HTML plumbing for you, over `renderToStringAsync`. Three variants, all
+A framework adapter that does the HTML plumbing for you, over `renderToString`. Three variants, all
 taking the same options.
 
 ```ts
@@ -165,9 +75,9 @@ elementSSR(options?): handle hook (transformPageChunk)
 
 ```ts
 options?: {
-  registry?: Registry,
   resolve?: Source | Source[],
   onUnresolved?: (tag: string) => void,
+  serializeState?: boolean,
 }
 ```
 
@@ -220,7 +130,7 @@ map fits (a custom convention, a remote lookup, etc.).
 type Source = Registry | ReturnType<typeof lazy> | ResolveFn;
 ```
 
-Anything [`renderToStringAsync`](#rendertostringasync-html-options) can resolve a tag through: a static
+Anything [`renderToString`](#rendertostring-html-options) can resolve a tag through: a static
 `Registry`, an importer map wrapped in [`lazy`](#lazy-map-options), or a `ResolveFn`.
 
 ### `onUnresolved`
@@ -243,15 +153,14 @@ adapters.
 
 ## Subpath exports
 
-| Import                                           | Exports                                                              |
-| ------------------------------------------------ | -------------------------------------------------------------------- |
-| `@webtides/element-js-ssr-renderer`              | `renderToString`, `renderToStringAsync`, `lazy`                      |
-| `@webtides/element-js-ssr-renderer/dom-shim`     | DOM globals shim (side-effect import)                                |
-| `@webtides/element-js-ssr-renderer/astro`        | `elementSSR` (Astro middleware)                                      |
-| `@webtides/element-js-ssr-renderer/nuxt`         | `elementSSR` (Nitro `render:response` handler)                       |
-| `@webtides/element-js-ssr-renderer/sveltekit`    | `elementSSR` (SvelteKit `handle` hook)                               |
-| `@webtides/element-js-ssr-renderer/resolve/node` | `fromDirectory`, `fromManifest` (Node-only)                          |
-| `@webtides/element-js-ssr-renderer/generate`     | `generateLazyMap`, `entriesFromDirectory`, … (build-time, Node-only) |
+| Import                                        | Exports                                                              |
+| --------------------------------------------- | -------------------------------------------------------------------- |
+| `@webtides/element-js-ssr-renderer`           | `renderToString`, `lazy`                                             |
+| `@webtides/element-js-ssr-renderer/dom-shim`  | DOM globals shim (side-effect import)                                |
+| `@webtides/element-js-ssr-renderer/astro`     | `elementSSR` (Astro middleware)                                      |
+| `@webtides/element-js-ssr-renderer/nuxt`      | `elementSSR` (Nitro `render:response` handler)                       |
+| `@webtides/element-js-ssr-renderer/sveltekit` | `elementSSR` (SvelteKit `handle` hook)                               |
+| `@webtides/element-js-ssr-renderer/generate`  | `generateLazyMap`, `entriesFromDirectory`, … (build-time, Node-only) |
 
 ## `element-ssr` CLI
 

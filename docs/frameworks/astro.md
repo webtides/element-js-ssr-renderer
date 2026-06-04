@@ -10,11 +10,11 @@ import Button from "@webtides/element-library/button";
 import InputField from "@webtides/element-library/input-field";
 
 export const onRequest = elementSSR({
-  registry: { "el-button": Button, "el-input-field": InputField },
+  resolve: { "el-button": Button, "el-input-field": InputField },
 });
 ```
 
-`elementSSR` runs on `renderToStringAsync`, so it takes the same sources (see
+`elementSSR` runs on `renderToString`, so it takes the same sources (see
 [Resolving components](/resolving-components)). To load only the components a page uses — the serverless /
 edge win — resolve lazily with `import.meta.glob` (Astro is Vite-based) and compose the library with your own
 components:
@@ -24,12 +24,12 @@ components:
 import "@webtides/element-js-ssr-renderer/dom-shim";
 import { elementSSR } from "@webtides/element-js-ssr-renderer/astro";
 import { lazy } from "@webtides/element-js-ssr-renderer";
-import libraryComponents from "@webtides/element-library/all.server.js";
+import Button from "@webtides/element-library/button";
 
 export const onRequest = elementSSR({
   resolve: [
-    lazy(libraryComponents),
-    lazy(import.meta.glob("../components/*.js")), // overrides the library on a tag clash
+    { "el-button": Button }, // eager base components
+    lazy(import.meta.glob("../components/*.js")), // overrides the above on a tag clash
   ],
 });
 ```
@@ -40,7 +40,7 @@ Then author components normally in `.astro` files and load their `define` module
 
 A complete, runnable version of this setup lives in
 [`examples/astro/`](https://github.com/webtides/element-js-ssr-renderer/tree/main/examples/astro) — a
-`@astrojs/node` app that composes element-library components (eager registry) with its own components
+`@astrojs/node` app that composes element-library components (an eager static map) with its own components
 (`lazy(import.meta.glob(...))`), covering both the shadow (DSD) and light-DOM paths.
 
 ```bash

@@ -1,9 +1,9 @@
-import { renderToStringAsync } from "../render-to-string.js";
+import { renderToString } from "../render-to-string.js";
 
 /**
  * SvelteKit `handle` hook that pre-renders @webtides/element-js custom elements in every page's
  * HTML. Unlike the Response-based adapters (Astro, Nuxt), SvelteKit hands you the rendered HTML as
- * a **string** through `transformPageChunk`, so this calls {@link renderToStringAsync} directly and
+ * a **string** through `transformPageChunk`, so this calls {@link renderToString} directly and
  * needs no Response kernel.
  *
  * Use it from your `src/hooks.server.{js,ts}` so you control import order — the DOM shim must be
@@ -17,8 +17,10 @@ import { renderToStringAsync } from "../render-to-string.js";
  * import Button from '@webtides/element-library/button';
  *
  * export const handle = elementSSR({
- *     registry: { 'el-button': Button },                       // eager element-library components
- *     resolve: lazy(import.meta.glob('./components/*.js')),    // this project's — loaded on demand
+ *     resolve: [
+ *         { 'el-button': Button },                              // eager element-library components
+ *         lazy(import.meta.glob('./components/*.js')),          // this project's — loaded on demand
+ *     ],
  * });
  * ```
  *
@@ -35,7 +37,6 @@ import { renderToStringAsync } from "../render-to-string.js";
  * defaults; enable element-js' matching `serializeState` config on the client too.
  *
  * @param {{
- *   registry?: import('../render-to-string.js').Registry,
  *   resolve?: import('../render-to-string.js').Source | import('../render-to-string.js').Source[],
  *   onUnresolved?: (tag: string) => void,
  *   serializeState?: boolean,
@@ -43,19 +44,18 @@ import { renderToStringAsync } from "../render-to-string.js";
  * @return {(input: { event: any, resolve: (event: any, opts: { transformPageChunk: (chunk: { html: string, done: boolean }) => Promise<string> }) => any }) => any}
  */
 export function elementSSR({
-  registry = {},
   resolve,
   onUnresolved,
   serializeState = false,
 } = {}) {
-  const options = { registry, resolve, onUnresolved, serializeState };
+  const options = { resolve, onUnresolved, serializeState };
   return ({ event, resolve: resolveEvent }) => {
     let buffer = "";
     return resolveEvent(event, {
       transformPageChunk: async ({ html, done }) => {
         buffer += html;
         if (!done) return "";
-        return renderToStringAsync(buffer, options);
+        return renderToString(buffer, options);
       },
     });
   };
