@@ -21,6 +21,13 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-04 — Verified T-014 still unfixed in element-library 0.1.1
+
+**Tasks:** T-014
+
+- `@webtides/element-library@0.1.1` released (fixes the patch-package postinstall gotcha) but does **not** fix the Nuxt blocker. Inspected the 0.1.1 tarball (`npm pack @webtides/element-library@0.1.1`): `src/utils/` appears only as TypeScript declarations under `types/` (`types/src/utils/transitions.d.ts`, `body-scroll.d.ts`) — no runtime `.js` anywhere under `utils/`. So `notification.js`'s `import '../../utils/transitions.js'` still fails to resolve, and `el-notification` still can't build/import from the published package.
+- Two distinct bugs: 0.1.1 closed the patch-package one; the missing-runtime-`src/utils` one (T-014) is untouched. The `.d.ts` files being emitted for those modules confirms the source exists in the repo — this is a pure `files`/packaging omission dropping the `.js`, fixable by adding `src/utils/*.js` to the published allowlist. Fix still belongs upstream.
+
 ## 2026-06-04 — Static lazy-map generator + Nuxt example conversion (T-013)
 
 **Tasks:** T-013, T-014
