@@ -69,3 +69,42 @@ Only `template()` runs on the server, purely from properties. `connected()`, wat
 measurement do not. A component whose initial markup depends on runtime state beyond its declared properties
 renders that state's default until the client hydrates. See [Limitations](/reference/limitations).
 :::
+
+## State transport
+
+By default the client hydrates the server-rendered _markup_, but each component still derives its _state_ from
+its property defaults on upgrade. That's fine when the markup already reflects the state — but if the server
+rendered a component with non-default values (a seeded counter, a pre-filled form, a shared store), you want the
+client to start from **those** values, not the defaults.
+
+Opt in with `serializeState: true` (on `renderToString` / `renderToStringAsync`, or the framework adapters):
+
+```js
+renderToString(html, { registry, serializeState: true });
+```
+
+With it enabled, the renderer mirrors element-js' own serialization format so the client restores state on
+upgrade:
+
+- Every rendered component is stamped with a deterministic **`ejs:key`** attribute (derived from its tag and
+  document order — stable across renders, so it diffs and caches cleanly).
+- Each component's state — what element-js' `serializeState()` returns, i.e. its property values — is collected
+  into a single `<script type="ejs/json">` appended to the document body.
+- [`Store`](https://github.com/webtides/element-js) values are emitted as a `Store/<key>` reference, with the
+  store's own state stored once under that key. A store shared across components is therefore serialized **once**
+  and every referencing component points at it.
+
+On the client, element-js reads the `ejs:key` on connect, looks its entry up in the `ejs/json` script, and
+calls `restoreState()` — hydrating with the server's values.
+
+::: warning Two caveats
+**Import order.** The DOM shim must be imported before any component module (the same rule as SSR generally) —
+the adapters' docs show where. State transport additionally needs element-js' own `serializeState` config
+enabled **on the client**, so set `globalThis.elementJsConfig = { serializeState: true }` before your
+components `define`.
+
+**Server helpers stay inert.** element-js' `SerializeStateHelper` reaches for `document.scripts`/`createElement`/
+`body`, which don't meaningfully exist on the server. The renderer never routes through it — it builds the
+`ejs/json` script directly — and the DOM shim stubs those just enough that a component touching them during
+construction (e.g. a `Store`) won't throw.
+:::

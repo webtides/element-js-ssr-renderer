@@ -30,15 +30,25 @@ import { renderToStringAsync } from "../render-to-string.js";
  * On the client, load each component's `…/define` (or `…/all`) so the elements upgrade and hydrate
  * from the Declarative Shadow DOM this emits.
  *
+ * Pass `serializeState: true` to transport each component's server-rendered state to the client (an
+ * `ejs/json` script + per-host `ejs:key`s) so it hydrates with that state instead of property
+ * defaults; enable element-js' matching `serializeState` config on the client too.
+ *
  * @param {{
  *   registry?: import('../render-to-string.js').Registry,
  *   resolve?: import('../render-to-string.js').Source | import('../render-to-string.js').Source[],
  *   onUnresolved?: (tag: string) => void,
+ *   serializeState?: boolean,
  * }} [options]
  * @return {(input: { event: any, resolve: (event: any, opts: { transformPageChunk: (chunk: { html: string, done: boolean }) => Promise<string> }) => any }) => any}
  */
-export function elementSSR({ registry = {}, resolve, onUnresolved } = {}) {
-  const options = { registry, resolve, onUnresolved };
+export function elementSSR({
+  registry = {},
+  resolve,
+  onUnresolved,
+  serializeState = false,
+} = {}) {
+  const options = { registry, resolve, onUnresolved, serializeState };
   return ({ event, resolve: resolveEvent }) => {
     let buffer = "";
     return resolveEvent(event, {

@@ -42,16 +42,31 @@ import { transformHtmlResponse } from "./transform-response.js";
  * On the client, import the matching `…/define` (or `…/all`) so the elements upgrade and hydrate
  * from the Declarative Shadow DOM this emits.
  *
+ * Pass `serializeState: true` to transport each component's server-rendered state to the client (an
+ * `ejs/json` script + per-host `ejs:key`s) so it hydrates with that state instead of property
+ * defaults; enable element-js' matching `serializeState` config on the client too.
+ *
  * @param {{
  *   registry?: import('../render-to-string.js').Registry,
  *   resolve?: import('../render-to-string.js').Source | import('../render-to-string.js').Source[],
  *   onUnresolved?: (tag: string) => void,
+ *   serializeState?: boolean,
  * }} [options]
  * @return {(context: any, next: () => Promise<Response>) => Promise<Response>}
  */
-export function elementSSR({ registry = {}, resolve, onUnresolved } = {}) {
+export function elementSSR({
+  registry = {},
+  resolve,
+  onUnresolved,
+  serializeState = false,
+} = {}) {
   return async (context, next) => {
     const response = await next();
-    return transformHtmlResponse(response, { registry, resolve, onUnresolved });
+    return transformHtmlResponse(response, {
+      registry,
+      resolve,
+      onUnresolved,
+      serializeState,
+    });
   };
 }

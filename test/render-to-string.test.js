@@ -5,7 +5,7 @@ import { renderToString, renderToStringAsync, lazy } from "../src/index.js";
 import Button from "@webtides/element-library/button";
 import InputField from "@webtides/element-library/input-field";
 import AccordionGroup from "@webtides/element-library/accordion-group";
-import { TemplateElement, html } from "@webtides/element-js";
+import { TemplateElement, html, Store } from "@webtides/element-js";
 
 // Inline shadow components exercising each `adoptGlobalStyles` mode.
 class AdoptAll extends TemplateElement {
@@ -336,5 +336,130 @@ describe("unresolved-tag warning (dev)", () => {
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0][0]).toContain("<my-unknown>");
     spy.mockRestore();
+  });
+});
+
+// A plain stateful shadow component: its `count`/`label` properties form its serializable state.
+class StateCounter extends TemplateElement {
+  constructor() {
+    super({ shadowRender: true });
+  }
+  properties() {
+    return { count: 0, label: "Apples" };
+  }
+  template() {
+    return html`<span>${this.label}: ${this.count}</span>`;
+  }
+}
+// A Store subclass whose `items` property is its serializable state.
+class CartStore extends Store {
+  properties() {
+    return { items: 0 };
+  }
+}
+// One shared store instance (keyed) referenced by every CartBadge — the de-duplication case.
+const cart = new CartStore({ items: 2 }, { key: "cart" });
+class CartBadge extends TemplateElement {
+  constructor() {
+    super({ shadowRender: true });
+  }
+  properties() {
+    return { cart };
+  }
+  template() {
+    return html`<span>${this.cart.items}</span>`;
+  }
+}
+
+const stateRegistry = {
+  "state-counter": StateCounter,
+  "cart-badge": CartBadge,
+};
+
+/** Parse the document's single `ejs/json` state script back into an object (or `undefined`). */
+const stateOf = (out) => {
+  const match = out.match(/<script type="ejs\/json">([\s\S]*?)<\/script>/);
+  return match ? JSON.parse(match[1]) : undefined;
+};
+
+describe("state transport (serializeState)", () => {
+  it("does not stamp keys or emit a state script by default", () => {
+    const out = renderToString('<state-counter count="3"></state-counter>', {
+      registry: stateRegistry,
+    });
+    expect(out).not.toContain("ejs:key");
+    expect(out).not.toContain("ejs/json");
+  });
+
+  it("stamps a deterministic ejs:key on each rendered host", () => {
+    const out = renderToString(
+      "<state-counter></state-counter><state-counter></state-counter>",
+      { registry: stateRegistry, serializeState: true },
+    );
+    expect(out).toContain('ejs:key="state-counter-0"');
+    expect(out).toContain('ejs:key="state-counter-1"');
+  });
+
+  it("is deterministic — identical input yields identical output", () => {
+    const input =
+      '<state-counter count="1"></state-counter><state-counter count="2"></state-counter>';
+    const a = renderToString(input, {
+      registry: stateRegistry,
+      serializeState: true,
+    });
+    const b = renderToString(input, {
+      registry: stateRegistry,
+      serializeState: true,
+    });
+    expect(a).toBe(b);
+  });
+
+  it("emits one ejs/json script whose state matches the server values", () => {
+    const out = renderToString(
+      '<state-counter count="3" label="Pears"></state-counter>',
+      { registry: stateRegistry, serializeState: true },
+    );
+    expect(out.match(/type="ejs\/json"/g)?.length).toBe(1);
+    const state = stateOf(out);
+    // attribute-overridden count + default label captured under the host's key
+    expect(state["state-counter-0"]).toEqual({ count: 3, label: "Pears" });
+  });
+
+  it("restores a round-tripped component to its server state", () => {
+    const out = renderToString('<state-counter count="7"></state-counter>', {
+      registry: stateRegistry,
+      serializeState: true,
+    });
+    const state = stateOf(out);
+    // simulate element-js' restoreState: Object.assign(instance, state[key])
+    const restored = Object.assign(new StateCounter(), state["state-counter-0"]);
+    expect(restored.count).toBe(7);
+    expect(restored.label).toBe("Apples");
+  });
+
+  it("serializes a shared Store once, referenced by each host", () => {
+    const out = renderToString(
+      "<cart-badge></cart-badge><cart-badge></cart-badge>",
+      { registry: stateRegistry, serializeState: true },
+    );
+    const state = stateOf(out);
+    // both hosts reference the store by key; the store's state lives once under that key
+    expect(state["cart-badge-0"]).toEqual({ cart: "Store/cart" });
+    expect(state["cart-badge-1"]).toEqual({ cart: "Store/cart" });
+    expect(state.cart).toEqual({ items: 2 });
+    // the store body is emitted a single time, not once per referencing host
+    expect(out.match(/"items":2/g)?.length).toBe(1);
+  });
+
+  it("transports state through the async path too", async () => {
+    const out = await renderToStringAsync(
+      '<state-counter count="9"></state-counter>',
+      { resolve: stateRegistry, serializeState: true },
+    );
+    expect(out).toContain('ejs:key="state-counter-0"');
+    expect(stateOf(out)["state-counter-0"]).toEqual({
+      count: 9,
+      label: "Apples",
+    });
   });
 });

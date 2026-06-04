@@ -47,6 +47,14 @@ if (typeof globalThis.document === "undefined") {
   globalThis.document = {
     styleSheets: [],
     scripts: [],
+    // With state serialization enabled (T-007), element-js' SerializeStateHelper lazily creates an
+    // `ejs/json` <script> in the body the first time a component/store touches its state during
+    // construction. The renderer builds that script itself and never reads element-js' copy, so
+    // these just need to exist as harmless no-ops to keep construction from throwing on the server.
+    createElement() {
+      return { setAttribute() {}, textContent: "{}" };
+    },
+    body: { appendChild() {} },
   };
 }
 

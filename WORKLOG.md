@@ -21,6 +21,16 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-04 — Server→client state transport (T-007)
+
+**Tasks:** T-007
+
+- Added an opt-in `serializeState` option to `renderToString` / `renderToStringAsync` (and threaded it through the Astro + SvelteKit `elementSSR` adapters via `transformHtmlResponse`). When off (default), output is byte-for-byte unchanged — the existing 41 tests stay green.
+- When on, every rendered component (non-empty template, non-empty state) is stamped with a **deterministic** `ejs:key` (`<tag>-<n>`, `n` advancing in document order via a per-pass counter — no `randomUUID`, so identical input yields identical output) and its `serializeState()` output is collected into a single `<script type="ejs/json">` appended to `<body>` (falls back to the root for fragments). Built directly with `JSON.stringify` + a Store replacer — never routed through element-js' `SerializeStateHelper`, which needs `document.scripts`/`createElement`/`body`. `<` is escaped to `<` so embedded markup can't close the script early.
+- `Store` handling mirrors element-js' replacer/reviver: a store value serializes to a `Store/<key>` reference, with the store's own `serializeState()` stored once under that key; `collectStores` walks state trees recursively and de-dupes via a key set, so a store shared across components is emitted a single time and every host points at it.
+- `serializeState: true` also flips `globalThis.elementJsConfig.serializeState` for the process (per element-js' own config). Hardened `dom-shim` with no-op `document.createElement`/`document.body.appendChild` so a `Store` touching `SerializeStateHelper` during server construction stays inert instead of throwing. Import path quirk: element-js' `exports` map turns `src/util/*` into `*.js`, so the Store import is extension-less (`…/util/Store`).
+- Tests: 7 new cases in `render-to-string.test.js` (default-off guard, deterministic per-host `ejs:key`s, identical-output determinism, `ejs/json` shape + server values, `Object.assign` round-trip, shared-`Store` single emission, async path). Suite green at 48. Documented the format + import-order/SSR caveats in `docs/concepts/` and the `serializeState` option in `docs/api/`; `docs:build` clean (no dead links).
+
 ## 2026-06-04 — VitePress docs site + GitHub Pages prep (T-012)
 
 **Tasks:** T-012

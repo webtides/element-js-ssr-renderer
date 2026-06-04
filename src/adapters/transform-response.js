@@ -15,6 +15,7 @@ import { renderToStringAsync } from "../render-to-string.js";
  *   registry?: import('../render-to-string.js').Registry,
  *   resolve?: import('../render-to-string.js').Source | import('../render-to-string.js').Source[],
  *   onUnresolved?: (tag: string) => void,
+ *   serializeState?: boolean,
  * }} [options] - forwarded to {@link renderToStringAsync}
  * @return {Promise<Response>} the original response if non-HTML, else a new one with the same
  *   status/headers and the custom elements pre-rendered

@@ -14,15 +14,17 @@ renderToString(
   options?: {
     registry?: Registry,
     onUnresolved?: (tag: string) => void,
+    serializeState?: boolean,
   },
 ): string
 ```
 
-| Param                  | Description                                                                                     |
-| ---------------------- | ----------------------------------------------------------------------------------------------- |
-| `html`                 | An HTML document or fragment (e.g. a framework's rendered response).                             |
-| `options.registry`     | A [`Registry`](#registry) of already-loaded components. Defaults to `{}`.                        |
-| `options.onUnresolved` | Called for each custom-element-looking tag (contains `-`) not in `registry`. See [below](#onunresolved). |
+| Param                     | Description                                                                                     |
+| ------------------------- | ----------------------------------------------------------------------------------------------- |
+| `html`                    | An HTML document or fragment (e.g. a framework's rendered response).                             |
+| `options.registry`        | A [`Registry`](#registry) of already-loaded components. Defaults to `{}`.                        |
+| `options.onUnresolved`    | Called for each custom-element-looking tag (contains `-`) not in `registry`. See [below](#onunresolved). |
+| `options.serializeState`  | Opt into [client state transport](#serializestate). Defaults to `false`.                         |
 
 **Returns** the HTML with every registered custom element pre-rendered in place.
 
@@ -41,16 +43,18 @@ renderToStringAsync(
     registry?: Registry,
     resolve?: Source | Source[],
     onUnresolved?: (tag: string) => void,
+    serializeState?: boolean,
   },
 ): Promise<string>
 ```
 
-| Param                  | Description                                                                                          |
-| ---------------------- | ---------------------------------------------------------------------------------------------------- |
-| `html`                 | An HTML document or fragment.                                                                         |
-| `options.registry`     | Lowest-precedence [`Registry`](#registry) source.                                                    |
-| `options.resolve`      | One [`Source`](#source) or an array of them. `resolve` sources override `registry`; within the array, **later wins**. |
-| `options.onUnresolved` | Called once per custom-element tag no source could resolve. See [below](#onunresolved).               |
+| Param                    | Description                                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `html`                   | An HTML document or fragment.                                                                         |
+| `options.registry`       | Lowest-precedence [`Registry`](#registry) source.                                                    |
+| `options.resolve`        | One [`Source`](#source) or an array of them. `resolve` sources override `registry`; within the array, **later wins**. |
+| `options.onUnresolved`   | Called once per custom-element tag no source could resolve. See [below](#onunresolved).               |
+| `options.serializeState` | Opt into [client state transport](#serializestate). Defaults to `false`.                              |
 
 **Returns** a `Promise` of the pre-rendered HTML.
 
@@ -188,6 +192,16 @@ Anything [`renderToStringAsync`](#rendertostringasync-html-options) can resolve 
 The default handler warns once per distinct tag in non-production only (`NODE_ENV`-gated, edge-safe), to
 catch a forgotten source or a typo; it is silent in production. Pass your own to handle it, or `() => {}` to
 silence it for intentionally client-only / third-party tags.
+
+### `serializeState`
+
+`boolean` (default `false`). When enabled, each rendered component is stamped with a deterministic `ejs:key`
+attribute and its state is collected into a single `<script type="ejs/json">` appended to the body, so the
+client restores the server's state on hydration instead of re-deriving from property defaults. `Store` values
+are emitted as `Store/<key>` references and a shared store is serialized once. Requires element-js' matching
+`serializeState` config to be enabled on the client too. See
+[State transport](/concepts/#state-transport) for the format and caveats. The same option is accepted by the
+[Astro](/frameworks/astro) and [SvelteKit](/frameworks/sveltekit) `elementSSR` adapters.
 
 ## Subpath exports
 

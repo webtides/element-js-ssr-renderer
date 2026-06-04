@@ -3,6 +3,7 @@ import {
   dashToCamel,
   parseAttribute,
 } from "@webtides/element-js/src/util/AttributeParser";
+import { Store } from "@webtides/element-js/src/util/Store";
 
 /**
  * @typedef {Object<string, CustomElementConstructor>} Registry
@@ -34,9 +35,12 @@ function coerceAttribute(raw, fallback) {
  * with the attribute values, then call `template()` and stringify the resulting `TemplateResult`.
  * @param {CustomElementConstructor} Constructor
  * @param {Object<string, string>} attributes
- * @return {{ markup: string, shadow: boolean, styleEntries: {index: number, css: string}[], adoptGlobalStyles: boolean | string | string[] }}
+ * @param {boolean} [serialize] - when true, also capture the instance's `serializeState()` so the
+ *   renderer can transport it to the client (T-007). Off by default so the value (and its DOM-touching
+ *   side effects) are only computed when state transport is opted in.
+ * @return {{ markup: string, shadow: boolean, styleEntries: {index: number, css: string}[], adoptGlobalStyles: boolean | string | string[], serializedState: object | undefined }}
  */
-function renderComponent(Constructor, attributes) {
+function renderComponent(Constructor, attributes, serialize) {
   const instance = new Constructor();
 
   const defaults =
@@ -61,13 +65,76 @@ function renderComponent(Constructor, attributes) {
     .map((css, index) => ({ index, css }))
     .filter(({ css }) => Boolean(css));
 
+  // Capture the component's state exactly as element-js would (`serializeState()` defaults to every
+  // property value), so the client can restore it instead of re-deriving from property defaults.
+  const serializedState =
+    serialize && typeof instance.serializeState === "function"
+      ? instance.serializeState()
+      : undefined;
+
   return {
     markup,
     shadow: Boolean(instance._options?.shadowRender),
     styleEntries,
     // element-js default is `true`; mirror that so plain components adopt global styles.
     adoptGlobalStyles: instance._options?.adoptGlobalStyles ?? true,
+    serializedState,
   };
+}
+
+/**
+ * Recursively register every {@link Store} reachable from `value` into `stateMap`, keyed by the
+ * store's own `_serializationKey`. This mirrors element-js' deserialize reviver, which resolves a
+ * `Store/<key>` reference by looking that key up in the same flat state map. De-duplicated via
+ * `seen`, so a store shared across components is serialized exactly once (T-007.3).
+ * @param {*} value - a serialized-state value tree (object/array/primitive, possibly holding Stores)
+ * @param {Object<string, object>} stateMap - the flat map being assembled for the `ejs/json` script
+ * @param {Set<string>} seen - store keys already registered
+ */
+function collectStores(value, stateMap, seen) {
+  if (value instanceof Store) {
+    if (!seen.has(value._serializationKey)) {
+      seen.add(value._serializationKey);
+      const state = value.serializeState();
+      stateMap[value._serializationKey] = state;
+      collectStores(state, stateMap, seen);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectStores(item, stateMap, seen);
+  } else if (value && typeof value === "object") {
+    for (const item of Object.values(value))
+      collectStores(item, stateMap, seen);
+  }
+}
+
+/**
+ * JSON replacer mirroring element-js' `serializeState`: a {@link Store} value is emitted as the
+ * reference string `Store/<key>` (its actual state lives under that key, via {@link collectStores}).
+ * @param {string} _key
+ * @param {*} value
+ * @return {*}
+ */
+function storeReplacer(_key, value) {
+  return value instanceof Store ? `Store/${value._serializationKey}` : value;
+}
+
+/**
+ * Append the merged state map as a single `<script type="ejs/json">` to the document body — the exact
+ * shape element-js reads on the client (`initGlobalStateObject` finds it by type, hydration restores
+ * each `ejs:key` from it). `<` is escaped to `<` so embedded markup can't close the script early.
+ * @param {import('node-html-parser').HTMLElement} root
+ * @param {Object<string, object>} stateMap
+ */
+function appendStateScript(root, stateMap) {
+  const json = JSON.stringify(stateMap, storeReplacer).replace(/</g, "\\u003c");
+  const script = parse(
+    `<script type="ejs/json">${json}</script>`,
+    PARSE_OPTIONS,
+  ).childNodes[0];
+  const body = root.querySelector("body") ?? root;
+  body.appendChild(script);
 }
 
 /**
@@ -129,8 +196,7 @@ function collectGlobalStyles(root) {
  */
 function selectAdoptedStyles(globalStyles, adoptGlobalStyles) {
   if (adoptGlobalStyles === false) return [];
-  if (adoptGlobalStyles === true)
-    return globalStyles.map(({ html }) => html);
+  if (adoptGlobalStyles === true) return globalStyles.map(({ html }) => html);
 
   const selectors = (
     Array.isArray(adoptGlobalStyles) ? adoptGlobalStyles : [adoptGlobalStyles]
@@ -161,6 +227,13 @@ function isEmptyTemplate(markup) {
  * @property {(tag: string) => void} [onUnresolved] - called with each custom-element-looking tag
  *   (contains `-`) that isn't in `registry`. The async resolver uses this to discover which tags to
  *   load; it also backs the dev-mode "unregistered tag" warning (T-008.6).
+ * @property {boolean} [serializeState] - when true, stamp each rendered component with a deterministic
+ *   `ejs:key` and collect its state into `stateMap` for client hydration (T-007).
+ * @property {Object<string, object>} stateMap - merged state, keyed by `ejs:key` (and store keys),
+ *   emitted once as the `ejs/json` script.
+ * @property {Set<string>} storeKeys - store keys already collected into `stateMap`, for de-duplication.
+ * @property {{ n: number }} keyCounter - monotonic counter backing the deterministic `ejs:key`s; it
+ *   advances in document order, so identical input yields identical keys across renders (T-007.1).
  */
 
 /**
@@ -176,11 +249,36 @@ function transformNode(node, ctx) {
     const Constructor = tag ? ctx.registry[tag] : undefined;
 
     if (Constructor) {
-      const { markup, shadow, styleEntries, adoptGlobalStyles } =
-        renderComponent(Constructor, child.attributes ?? {});
+      const {
+        markup,
+        shadow,
+        styleEntries,
+        adoptGlobalStyles,
+        serializedState,
+      } = renderComponent(
+        Constructor,
+        child.attributes ?? {},
+        ctx.serializeState,
+      );
       const idBase = tag.toUpperCase();
 
       if (!isEmptyTemplate(markup)) {
+        // State transport (T-007): give the host a deterministic `ejs:key` and record its
+        // server-rendered state so the client restores it on hydration instead of falling back to
+        // property defaults. Done for both render paths below (the attribute stays on `child`).
+        // Only components with actual serializable state are stamped — keys stay in lockstep with
+        // the state map, and components with nothing to restore add no noise.
+        if (
+          ctx.serializeState &&
+          serializedState &&
+          Object.keys(serializedState).length > 0
+        ) {
+          const key = `${tag}-${ctx.keyCounter.n++}`;
+          child.setAttribute("ejs:key", key);
+          ctx.stateMap[key] = serializedState;
+          collectStores(serializedState, ctx.stateMap, ctx.storeKeys);
+        }
+
         if (shadow) {
           // Declarative Shadow DOM: the component's chrome + inlined styles live inside a
           // <template shadowrootmode>, while the authored slot content stays in light DOM
@@ -189,7 +287,10 @@ function transformNode(node, ctx) {
           // Shadow roots are isolated, so de-dup only *within* this root (a global may match more
           // than once) — repeats across instances are inherent and stay.
           const seen = new Set();
-          const adopted = selectAdoptedStyles(ctx.globalStyles, adoptGlobalStyles)
+          const adopted = selectAdoptedStyles(
+            ctx.globalStyles,
+            adoptGlobalStyles,
+          )
             .filter((html) => !seen.has(html) && seen.add(html))
             .join("");
           const styleTags = ownStyleTags(styleEntries, idBase);
@@ -231,10 +332,27 @@ function transformNode(node, ctx) {
   }
 }
 
+/**
+ * Toggle element-js' own `serializeState` flag for this process so its serialize/deserialize helpers
+ * are consistent with the renderer's opt-in (T-007.4). The renderer builds the `ejs/json` script
+ * itself rather than going through those DOM-based helpers (see {@link appendStateScript}); the
+ * accompanying `dom-shim` keeps the helpers a harmless no-op on the server if a component happens to
+ * touch them during construction (e.g. a Store).
+ * @param {boolean} enabled
+ */
+function setSerializeStateConfig(enabled) {
+  globalThis.elementJsConfig = {
+    ...globalThis.elementJsConfig,
+    serializeState: Boolean(enabled),
+  };
+}
+
 /** Whether we're in a production build, so the dev-only unresolved-tag warning stays quiet. */
 function isProduction() {
   // `process` is absent on some edge runtimes; bundlers (Vite/Rollup) inline the value in prod.
-  return typeof process !== "undefined" && process.env?.NODE_ENV === "production";
+  return (
+    typeof process !== "undefined" && process.env?.NODE_ENV === "production"
+  );
 }
 
 /**
@@ -265,19 +383,28 @@ function defaultUnresolvedWarning() {
  * @param {string} html
  * @param {Registry} registry
  * @param {(tag: string) => void} [onUnresolved]
+ * @param {boolean} [serializeState] - opt into client state transport (T-007)
  * @return {string}
  */
-function runTransform(html, registry, onUnresolved) {
+function runTransform(html, registry, onUnresolved, serializeState) {
   const root = parse(html, PARSE_OPTIONS);
   // Collect global styles up front, before any generated shadow templates are spliced in, so we
   // only ever adopt the input document's own stylesheets.
   const globalStyles = collectGlobalStyles(root);
+  const stateMap = {};
   transformNode(root, {
     registry,
     globalStyles,
     lightStyleIds: new Set(),
     onUnresolved,
+    serializeState,
+    stateMap,
+    storeKeys: new Set(),
+    keyCounter: { n: 0 },
   });
+  if (serializeState && Object.keys(stateMap).length > 0) {
+    appendStateScript(root, stateMap);
+  }
   return root.toString();
 }
 
@@ -295,14 +422,29 @@ function runTransform(html, registry, onUnresolved) {
  * This is the synchronous path: every component must already be loaded and listed in `registry`.
  * For lazily-loaded or multi-source components, use {@link renderToStringAsync}.
  *
+ * When `serializeState` is enabled, each rendered component is also stamped with a deterministic
+ * `ejs:key` and its state collected into a single `<script type="ejs/json">` appended to the body, so
+ * the client restores server state on hydration instead of re-deriving from defaults (T-007). The
+ * DOM shim must be imported before any component module for this (and SSR generally) to work.
+ *
  * @param {string} html - an HTML document or fragment (e.g. a framework's rendered response)
- * @param {{ registry?: Registry, onUnresolved?: (tag: string) => void }} [options]
+ * @param {{ registry?: Registry, onUnresolved?: (tag: string) => void, serializeState?: boolean }} [options]
  *   `onUnresolved` is called for each custom-element-looking tag (contains `-`) not in `registry`;
  *   it defaults to a dev-only warning. Pass `() => {}` to silence (e.g. for client-only tags).
+ *   `serializeState` (default `false`) opts into client state transport.
  * @return {string} the HTML with custom elements pre-rendered
  */
-export function renderToString(html, { registry = {}, onUnresolved } = {}) {
-  return runTransform(html, registry, onUnresolved ?? defaultUnresolvedWarning());
+export function renderToString(
+  html,
+  { registry = {}, onUnresolved, serializeState = false } = {},
+) {
+  setSerializeStateConfig(serializeState);
+  return runTransform(
+    html,
+    registry,
+    onUnresolved ?? defaultUnresolvedWarning(),
+    serializeState,
+  );
 }
 
 /**
@@ -409,21 +551,28 @@ function composeSources(sources) {
  * custom elements that appear only inside a component's *generated* template, not just the input.
  *
  * @param {string} html
+ * As with {@link renderToString}, `serializeState` opts into client state transport — emitting a
+ * single `ejs/json` state script and per-component `ejs:key`s for hydration (T-007).
+ *
  * @param {{
  *   registry?: Registry,
  *   resolve?: Source | Source[],
  *   onUnresolved?: (tag: string) => void,
+ *   serializeState?: boolean,
  * }} [options]
  *   `registry` is the lowest-precedence source; `resolve` sources override it, later-wins within the
  *   array. `onUnresolved` is called once per custom-element tag that no source could resolve; it
- *   defaults to a dev-only warning (pass `() => {}` to silence).
+ *   defaults to a dev-only warning (pass `() => {}` to silence). `serializeState` (default `false`)
+ *   opts into client state transport.
  * @return {Promise<string>} the HTML with custom elements pre-rendered
  */
 export async function renderToStringAsync(
   html,
-  { registry = {}, resolve, onUnresolved } = {},
+  { registry = {}, resolve, onUnresolved, serializeState = false } = {},
 ) {
-  const extra = resolve == null ? [] : Array.isArray(resolve) ? resolve : [resolve];
+  setSerializeStateConfig(serializeState);
+  const extra =
+    resolve == null ? [] : Array.isArray(resolve) ? resolve : [resolve];
   const resolver = composeSources([registry, ...extra]);
   const warn = onUnresolved ?? defaultUnresolvedWarning();
 
@@ -433,7 +582,12 @@ export async function renderToStringAsync(
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const misses = new Set();
-    const out = runTransform(html, resolved, (tag) => misses.add(tag));
+    const out = runTransform(
+      html,
+      resolved,
+      (tag) => misses.add(tag),
+      serializeState,
+    );
 
     const fresh = [...misses].filter((tag) => !attempted.has(tag));
     if (fresh.length === 0) {
