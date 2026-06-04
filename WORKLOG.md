@@ -21,13 +21,20 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-04 — Consume `@webtides/element-library` from npm
+
+**Tasks:** —
+
+- Switched `@webtides/element-library` from a `file:` sibling link to the published `^0.1.0` (now on npm) in the root `devDependencies` and all three example `package.json`s (astro/sveltekit/nuxt); regenerated lockfiles so they resolve the registry tarball instead of the local symlink. Root test suite green at 52. Updated `examples/README.md` + each example README to drop the "sibling element-library must be present" note (renderer itself stays `file:../..`).
+- **Consumer-install gotcha:** `@webtides/element-library@0.1.0` ships `"postinstall": "patch-package"` without depending on `patch-package`, so a plain `npm install` fails with `patch-package: command not found`. Installed with `--ignore-scripts` here — the only patch it carries is for `@glidejs/glide` (carousel), which SSR never touches. Upstream fix needed: add `patch-package` as a dependency (or gate the script).
+
 ## 2026-06-04 — Nuxt example + `./nuxt` adapter (T-010)
 
 **Tasks:** T-010
 
 - Added the `./nuxt` adapter (`src/adapters/nuxt.js`, new package export): `elementSSR(options)` returns a Nitro `render:response` handler. Nitro's hook hands a plain `{ body, headers, statusCode }` object (not a web `Response`) that you mutate in place, so the adapter wraps `response.body` in a `Response`, runs it through the shared `transformHtmlResponse` kernel (same one Astro uses), and writes the transformed HTML back — non-HTML and non-string bodies pass through untouched. `test/nuxt.test.js` mirrors `test/astro.test.js` over the Nitro response shape (registry, lazy-only-loads-what's-present, non-HTML passthrough, non-string body). Suite green at 52 (was 48).
 - Added the runnable example under `examples/nuxt/` (Nuxt 3 + Nitro): a server plugin registers the hook; `app.vue` authors the same `x-counter`/`x-greeting` + `el-button`/`el-notification` markup as Astro/SvelteKit; a `.client.js` plugin loads each `define`; global tokens are injected inline via `useHead` so the renderer can adopt them into shadow roots. `nuxt.config.ts` sets `vue.compilerOptions.isCustomElement` (so Vue passes the tags through) and `nitro.externals.inline` (self-contained bundle of the `file:`-linked packages).
-- **Two Nitro-specific gotchas, documented in the example + docs:** (1) Nitro reorders top-level module evaluation, so a static `import '…/dom-shim'` is *not* guaranteed to run before element-js' `extends HTMLElement` (it didn't — `ReferenceError: HTMLElement is not defined` at startup). Fixed by loading the shim and all element-js imports via *ordered dynamic `import()`* inside the plugin, which evaluates in call order. (2) `import.meta.glob` is Vite-only and Nuxt's server is Nitro/rollup, so the lazy source is a hand-written `lazy({ 'x-counter': () => import(...) })` map.
+- **Two Nitro-specific gotchas, documented in the example + docs:** (1) Nitro reorders top-level module evaluation, so a static `import '…/dom-shim'` is _not_ guaranteed to run before element-js' `extends HTMLElement` (it didn't — `ReferenceError: HTMLElement is not defined` at startup). Fixed by loading the shim and all element-js imports via _ordered dynamic `import()`_ inside the plugin, which evaluates in call order. (2) `import.meta.glob` is Vite-only and Nuxt's server is Nitro/rollup, so the lazy source is a hand-written `lazy({ 'x-counter': () => import(...) })` map.
 - Verified end-to-end: `nuxt build` + `node .output/server/index.mjs`, then curl'd the page — 8 `shadowrootmode="open"` DSD templates, 34 `template-part` hydration markers, light-DOM greeting rendered in place (`Hello, <strong>Nuxt</strong>`), adopted `--el-*` global tokens inside shadow roots, attribute-seeded counters (`Apples: 3`, `Pears: 0`). Updated `examples/README.md` (3 tables), `docs/frameworks/nuxt.md` (planned → shipped), the API reference (third `elementSSR` variant + subpath row), `docs/index.md`, `docs/reference/limitations.md` (dropped the Nuxt roadmap item), `docs/resolving-components.md` (moved Nuxt out of the Vite-glob row), and the top-level `README.md`. `docs:build` clean.
 
 ## 2026-06-04 — Server→client state transport (T-007)
@@ -96,8 +103,8 @@ Append-only log of significant project changes. **Newest entries at the top.**
 **Tasks:** T-008.5
 
 - Added `fromDirectory(dir, { tagToPath, pick })` behind a new `@webtides/element-js-ssr-renderer/resolve/node` export — a `ResolveFn` that maps a tag to a file on disk (`<el-button>` → `<dir>/el-button.js`) and imports it on demand, so a project's components resolve by filename with no registry and no bundler. Usable as a `resolve` source alone or in an array.
-- Quarantined in its own module on purpose: it constructs a *runtime* import specifier, which a bundler can't analyze — fine in a long-running Node server, but it must never enter an edge bundle, so edge builds that don't import this path never see the dynamic import. Docs point bundled/edge targets to `lazy(import.meta.glob(...))`.
-- Accepts a path or `file:` URL base (URL recommended for ESM, since relative paths resolve from `cwd`); caches each found module's import; guards against path traversal in attacker-influenced tags; treats a missing file as a pass-through miss but lets errors *inside* a found module propagate (a broken component fails loudly instead of looking unregistered).
+- Quarantined in its own module on purpose: it constructs a _runtime_ import specifier, which a bundler can't analyze — fine in a long-running Node server, but it must never enter an edge bundle, so edge builds that don't import this path never see the dynamic import. Docs point bundled/edge targets to `lazy(import.meta.glob(...))`.
+- Accepts a path or `file:` URL base (URL recommended for ESM, since relative paths resolve from `cwd`); caches each found module's import; guards against path traversal in attacker-influenced tags; treats a missing file as a pass-through miss but lets errors _inside_ a found module propagate (a broken component fails loudly instead of looking unregistered).
 - Added `test/resolve-node.test.js` (6 tests) + an `el-fixture` component fixture: convention render, `file:` URL base, missing-file pass-through, per-module-once import, traversal refusal, and the missing-arg guard. Suite: 37 tests across 3 files.
 
 ## 2026-06-03 — Dev-mode warning for unresolved custom-element tags

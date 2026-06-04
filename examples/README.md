@@ -13,8 +13,8 @@ Shadow DOM (and light DOM), then hydrates them in the browser.
 
 Each example is **fully self-contained** — its own `package.json`, its own copy of the
 local components, its own framework wiring — so it doubles as a copy-pasteable blueprint.
-They link the renderer and `@webtides/element-library` from this monorepo via relative
-`file:` dependencies, so the sibling packages must be present.
+They link the renderer from this monorepo via a relative `file:` dependency (so the
+sibling package must be present), and pull `@webtides/element-library` from npm.
 
 ## The shape every example shares
 
@@ -65,8 +65,8 @@ checklist below.
 ## Adding a new example
 
 1. Create `examples/<framework>/` with its own `package.json`; depend on the renderer
-   (`file:../..`), `@webtides/element-library` (`file:../../../element-library`),
-   `@webtides/element-js`, and the framework.
+   (`file:../..`), `@webtides/element-library` (from npm), `@webtides/element-js`, and
+   the framework.
 2. Add the framework adapter under `src/adapters/<framework>.js`, export it as `./<framework>`
    in the package `exports`, and cover it with a test (mirror `test/astro.test.js`). Reuse
    `transformHtmlResponse` if the framework is `Response`-based; otherwise call

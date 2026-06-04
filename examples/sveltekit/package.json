@@ -12,7 +12,7 @@
   "dependencies": {
     "@webtides/element-js": "^1.2.11",
     "@webtides/element-js-ssr-renderer": "file:../..",
-    "@webtides/element-library": "file:../../../element-library"
+    "@webtides/element-library": "^0.1.0"
   },
   "devDependencies": {
     "@sveltejs/adapter-node": "^5.0.0",

@@ -29,9 +29,8 @@ npm run dev
 
 Then open the printed URL (default <http://localhost:3000>).
 
-> `npm install` links the renderer (`file:../..`) and `@webtides/element-library`
-> (`file:../../../element-library`) from this monorepo, so make sure both sibling
-> packages are present.
+> `npm install` links the renderer (`file:../..`) from this monorepo, so make sure that
+> sibling package is present; `@webtides/element-library` is pulled from npm.
 
 For a production-style run:
 
