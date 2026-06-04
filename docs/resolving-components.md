@@ -72,6 +72,28 @@ its own `…/resolve/node` module, so edge builds that don't import it never pul
 bundled / edge targets, use `lazy(import.meta.glob(...))`.
 :::
 
+### From a `custom-elements.json` manifest
+
+Any component package that ships a [Custom Elements Manifest](https://github.com/webcomponents/custom-elements-manifest) — including `@webtides/element-library`, which exports its own `./custom-elements.json` — resolves with **no hand-built registry**: `fromManifest` reads each tag's class module from the manifest and imports it on demand.
+
+```js
+import cem from "@webtides/element-library/custom-elements.json" with { type: "json" };
+import { fromManifest } from "@webtides/element-js-ssr-renderer/resolve/node";
+
+// Anchor `base` to the package root via an *exported* subpath, then strip the filename —
+// a bare `<pkg>/` specifier isn't resolvable unless the package declares a `"./"` export.
+const base = new URL(
+  ".",
+  import.meta.resolve("@webtides/element-library/package.json"),
+);
+
+await renderToStringAsync(html, {
+  resolve: fromManifest(cem, { base }),
+});
+```
+
+Like `fromDirectory`, it builds runtime import specifiers and lives behind `…/resolve/node` — Node servers, **not** edge bundles.
+
 ## Multiple sources
 
 `resolve` also accepts an **array** of sources, so library and project components compose. **Later sources
@@ -79,11 +101,17 @@ win** (like `{ ...a, ...b }`), so your own components can override a library's o
 
 ```js
 import { renderToStringAsync, lazy } from "@webtides/element-js-ssr-renderer";
-import libraryComponents from "@webtides/element-library/all.server.js"; // library-provided source
+import { fromManifest } from "@webtides/element-js-ssr-renderer/resolve/node";
+import cem from "@webtides/element-library/custom-elements.json" with { type: "json" };
+
+const base = new URL(
+  ".",
+  import.meta.resolve("@webtides/element-library/package.json"),
+);
 
 await renderToStringAsync(html, {
   resolve: [
-    lazy(libraryComponents), // base components
+    fromManifest(cem, { base }), // base components, straight from the library's manifest
     lazy(import.meta.glob("./components/*.js")), // this project's — overrides the library
   ],
 });
@@ -93,19 +121,46 @@ A plain `registry`, if also passed, is the lowest-precedence source. Either way 
 present on the page are resolved, so a 200-component library costs **nothing** on a page that uses three of
 them.
 
+## Generate a static map — never hand-write one
+
+`fromDirectory` and `fromManifest` build import specifiers _at runtime_, so they need a real filesystem and
+resolver — perfect on a long-running Node server, useless once a bundler seals your server into one graph
+(Nuxt/Nitro, webpack, the edge). There, every `import()` must be a literal the bundler can trace. Rather than
+hand-write that map, **generate it** with the bundled CLI:
+
+```sh
+# directory convention (x-counter.js → x-counter)
+element-ssr gen ./components -o ./components.generated.js
+
+# or from a custom-elements.json (handles nested layouts, e.g. element-library)
+element-ssr gen --manifest node_modules/@webtides/element-library/custom-elements.json \
+  -o ./library.generated.js
+```
+
+It emits a static, bundler-traceable module of `() => import("./x-counter.js")` thunks — wrap it in `lazy()`:
+
+```js
+import map from "./components.generated.js"; // generated, do not edit
+elementSSR({ resolve: lazy(map) });
+```
+
+Wire it into your build (`"prebuild": "element-ssr gen ./components -o ./components.generated.js"`) so it
+stays in sync. The same engine is available programmatically as `generateLazyMap` from
+`@webtides/element-js-ssr-renderer/generate` if you'd rather drive it from a Vite/rollup plugin. The Nuxt
+example uses exactly this — see [its plugin](https://github.com/webtides/element-js-ssr-renderer/tree/main/examples/nuxt).
+
 ## Which source for which environment
 
-| Deployment                                    | Supply `resolve` / `registry` as              | Tooling   |
-| --------------------------------------------- | --------------------------------------------- | --------- |
-| Anything, zero-config                         | static `{ tag: Class }` registry              | none      |
-| Plain Node server (incl. Nuxt / Nitro)        | `fromDirectory(...)` or a hand-written map    | none      |
-| Vite meta-framework (Astro, SvelteKit)        | `lazy(import.meta.glob("./components/*.js"))` | Vite      |
-| webpack                                       | `lazy()` over a `require.context`-shaped map  | webpack   |
-| Bundled edge (Workers, Deno, Vercel Edge)     | `lazy(...)` with static-literal importers     | a bundler |
+| Deployment                                                              | Supply `resolve` / `registry` as                         | Tooling     |
+| ----------------------------------------------------------------------- | -------------------------------------------------------- | ----------- |
+| Anything, zero-config                                                   | static `{ tag: Class }` registry                         | none        |
+| Long-running Node server (real FS)                                      | `fromDirectory(...)` or `fromManifest(cem)`              | none        |
+| Vite meta-framework (Astro, SvelteKit)                                  | `lazy(import.meta.glob("./components/*.js"))`            | Vite        |
+| Bundled server / edge (Nuxt/Nitro, webpack, Workers, Deno, Vercel Edge) | `lazy(map)` from a **generated** map (`element-ssr gen`) | the bundler |
 
-The static registry always works with no tooling; the lazy modes are opt-in cold-start wins for wherever you
-can produce static-specifier imports. The package itself depends on no bundler and never calls `import()` —
-your sources do.
+The static registry always works with no tooling; the lazy modes are opt-in cold-start wins. Either you let a
+runtime resolver reach the files (Node) or you bake a static map at build time (bundled/edge) — but you never
+hand-maintain a registry. The package itself depends on no bundler and never calls `import()` — your sources do.
 
 ## Sync vs. async
 

@@ -20,9 +20,8 @@ export default defineNitroPlugin(async (nitroApp) => {
   // element-library components, loaded eagerly into a static registry (the class,
   // never the `/define` module — that's client-only).
   const { default: Button } = await import("@webtides/element-library/button");
-  const { default: Notification } = await import(
-    "@webtides/element-library/notification"
-  );
+  const { default: Notification } =
+    await import("@webtides/element-library/notification");
 
   // This example composes two component sources to show the headline resolution
   // feature (T-008):
@@ -31,12 +30,16 @@ export default defineNitroPlugin(async (nitroApp) => {
   //   • a lazy `resolve` source — this project's own components under `./elements`,
   //     imported on demand so only the ones actually on a page are ever loaded.
   //
-  // Unlike the Astro / SvelteKit examples, we hand-write the lazy importer map
-  // instead of `lazy(import.meta.glob('./elements/*.js'))`: `import.meta.glob` is
-  // a Vite feature, and Nuxt's server runs on Nitro (rollup), which doesn't
-  // provide it. A plain map of dynamic imports works everywhere — `lazy` derives
-  // each tag from the map key's basename and picks the module's default export.
-  //
+  // Unlike the Astro / SvelteKit examples, we can't use
+  // `lazy(import.meta.glob('./elements/*.js'))`: `import.meta.glob` is a Vite
+  // feature, and Nuxt's server runs on Nitro (rollup), which doesn't provide it.
+  // Rather than hand-write the importer map, we generate it: `npm run gen:components`
+  // runs `element-ssr gen ./elements -o ./server/components.generated.js`, emitting
+  // a static map of `() => import('../elements/x-*.js')` thunks — literal specifiers
+  // Nitro can trace and code-split. Re-run it whenever you add/remove a component.
+  const { default: localComponents } =
+    await import("../components.generated.js");
+
   // `elementSSR` returns a Nitro `render:response` handler; register it on the
   // hook so it post-processes every page's HTML body — see src/adapters/nuxt.js.
   nitroApp.hooks.hook(
@@ -46,10 +49,7 @@ export default defineNitroPlugin(async (nitroApp) => {
         "el-button": Button,
         "el-notification": Notification,
       },
-      resolve: lazy({
-        "x-counter": () => import("../../elements/x-counter.js"),
-        "x-greeting": () => import("../../elements/x-greeting.js"),
-      }),
+      resolve: lazy(localComponents),
     }),
   );
 });

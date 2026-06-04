@@ -21,6 +21,23 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-04 — Static lazy-map generator + Nuxt example conversion (T-013)
+
+**Tasks:** T-013, T-014
+
+- Added a build-time generator (`src/generate-lazy-map.js`, exported as `./generate`) and an `element-ssr gen` CLI (`bin/element-ssr.js`) that emit a **static, bundler-traceable** lazy importer map — the no-hand-writing answer for targets where the runtime resolvers can't reach files: bundled servers (Nuxt/Nitro, webpack) and the edge. Two input modes mirror the runtime resolvers: **directory** (flat scan, `x-counter.js` → `x-counter`, hyphen-required so helper files are skipped) and **manifest** (a CEM, handles nested layouts like element-library). Output is a default-exported `{ tag: () => import("./rel.js") }` module with specifiers relative to the output file, tags sorted, duplicate-tag guarded; `generateLazyMap` also `mkdir -p`s the output dir. Added `bin` + `./generate` to package.json and `bin/` to `files`. 8 tests (`test/generate-lazy-map.test.js`), incl. a generate→import→`lazy()`→render round-trip for both modes. Suite green at 66 (was 58).
+- **Converted the Nuxt example** off its hand-written `lazy({...})` map: the plugin now imports a generated `server/components.generated.js`, produced by `npm run gen:components` (wired as `predev`/`prebuild`). This kills the last hand-written registry across all three examples (Astro/SvelteKit already use `import.meta.glob`). Verified the generated map renders both local components in isolation (`x-counter` shadow DSD seeded from attributes, `x-greeting` light-DOM `Hello, <strong>Nuxt</strong>`).
+- **Reframed T-003.2:** the element-library `./ssr` map isn't ergonomic sugar — it's the _bundled/edge_ answer for element-library (static map = bundler-traceable; `fromManifest` = Node-server-only), and it's generatable with this same engine (`element-ssr gen --manifest`).
+- **Found an upstream blocker (T-014):** a full `nuxt build` fails because `@webtides/element-library@0.1.0`'s npm tarball is missing `src/utils/` — `notification.js` imports `../../utils/transitions.js`, which isn't shipped, so the eagerly-registered `el-notification` can't build. Independent of this work (it's in code the example didn't change); distinct from the known `patch-package` postinstall gotcha. Fix belongs in the element-library repo.
+
+## 2026-06-04 — `fromManifest` CEM resolver (T-003)
+
+**Tasks:** T-003.1
+
+- Added `fromManifest(manifest, { base, pick })` to `src/resolve/node.js`: turns a parsed `custom-elements.json` (Custom Elements Manifest) into a lazy `ResolveFn`, importing each tag's class module on demand and caching per tag. Any CEM-shipping package — notably `@webtides/element-library`, which exports its own `./custom-elements.json` — becomes an SSR source with no hand-built `{ tag: Class }` registry. Node-only (builds runtime import specifiers), so it lives beside `fromDirectory` behind `…/resolve/node`. 6 new tests (`resolve-node.test.js`), suite green at 58.
+- **Reframed T-003.** The original task ("ship `all.server.js` in element-library — an eager `{ tag: Class }` map") had the wrong shape: `.server` conflates server/client with value-vs-side-effect (cf. the existing side-effecting `all.js`), and an eager "all" map loads every component up front, fighting the renderer's lazy design. Solving it renderer-side via the CEM is lazy by construction, generalizes to any manifest-shipping package, and needs no change/release in element-library. An optional library-side `./ssr` lazy map remains as T-003.2 if shorter ergonomics are wanted later.
+- **`base` gotcha (documented):** the manifest's module paths are package-relative, so `base` must be the package root — but `import.meta.resolve('<pkg>/')` throws `ERR_PACKAGE_PATH_NOT_EXPORTED` unless the package declares a `"./"` export (element-library doesn't). Anchor to an exported subpath and strip the filename instead: `new URL('.', import.meta.resolve('<pkg>/package.json'))`. `fromManifest` imports by direct file URL, bypassing the exports map, so internal `src/...` paths resolve fine. Verified end-to-end: `<el-button>` SSR'd to DSD against the real element-library manifest.
+
 ## 2026-06-04 — Consume `@webtides/element-library` from npm
 
 **Tasks:** —

@@ -8,8 +8,8 @@ sources at once**:
 - **element-library components** (`el-button`, `el-notification`) — loaded
   eagerly into a static `registry`;
 - **local components** (`x-counter`, `x-greeting`) — authored in `elements/` and
-  resolved **lazily** via a hand-written `lazy({...})` importer map, so only the
-  ones on a page are loaded.
+  resolved **lazily** via a **generated** importer map (`npm run gen:components`),
+  so only the ones on a page are loaded.
 
 …and both render paths:
 
@@ -47,19 +47,20 @@ npm run build && npm run preview
 2. **Disable JavaScript and reload.** Everything still shows, styled — no flash
    of empty/unstyled content. (The counter buttons just won't do anything yet.)
 3. **Re-enable JavaScript.** Click the counter's **+ / −** buttons: they update.
-   That's element-js *hydrating* the pre-rendered DSD (matching the
+   That's element-js _hydrating_ the pre-rendered DSD (matching the
    `<!--template-part-->` markers in the SSR output) rather than re-rendering
    from scratch.
 
 ## How it's wired
 
-| File                                | Role                                                                            |
-| ----------------------------------- | ------------------------------------------------------------------------------- |
-| `server/plugins/element-ssr.js`     | Imports the DOM shim first, then registers `elementSSR(...)` on `render:response`. |
-| `plugins/element-define.client.js`  | Browser-only: loads each component's `define` so the pre-rendered tags hydrate. |
-| `elements/*.js`                     | Local element-js components (default-export the class + a `define()`).          |
-| `app.vue`                           | Authors the custom elements as plain HTML + injects the global styles/tokens.   |
-| `nuxt.config.ts`                    | `isCustomElement` so Vue passes the tags through; `nitro.externals.inline` for import order. |
+| File                               | Role                                                                                          |
+| ---------------------------------- | --------------------------------------------------------------------------------------------- |
+| `server/plugins/element-ssr.js`    | Imports the DOM shim first, then registers `elementSSR(...)` on `render:response`.            |
+| `server/components.generated.js`   | Generated lazy importer map for `elements/` (`npm run gen:components`) — do not edit by hand. |
+| `plugins/element-define.client.js` | Browser-only: loads each component's `define` so the pre-rendered tags hydrate.               |
+| `elements/*.js`                    | Local element-js components (default-export the class + a `define()`).                        |
+| `app.vue`                          | Authors the custom elements as plain HTML + injects the global styles/tokens.                 |
+| `nuxt.config.ts`                   | `isCustomElement` so Vue passes the tags through; `nitro.externals.inline` for import order.  |
 
 ### Two Nuxt-specific notes
 
@@ -67,6 +68,8 @@ npm run build && npm run preview
   `<x-counter>` / `<el-button>` as unresolved Vue components. `nuxt.config.ts`
   marks any hyphenated tag as a native custom element so it renders verbatim.
 - **No `import.meta.glob`.** That's a Vite feature, but Nuxt's server runs on
-  Nitro (rollup), so the lazy source is a hand-written `lazy({ 'x-counter': () =>
-  import('../../elements/x-counter.js') })` map instead. Same behavior — a
-  component module is only imported when its tag appears on the page.
+  Nitro (rollup). Instead of hand-writing a `lazy({...})` map, we **generate** one
+  with `element-ssr gen ./elements -o ./server/components.generated.js` (run via
+  `npm run gen:components`, also wired as `predev`/`prebuild`). The output is a
+  static map of `() => import('../elements/x-*.js')` thunks Nitro can trace and
+  code-split — a component module is only imported when its tag appears on a page.
