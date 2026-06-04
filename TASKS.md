@@ -17,6 +17,12 @@ Hierarchical task list for this project. Both the user and any agents read and u
 
 ## Open
 
+- [x] T-012 Documentation site — present the docs with VitePress and prepare GitHub Pages hosting. Reorganize the monolithic `README.md` into structured pages (single source of truth), add net-new API reference + Core Concepts pages, slim the README to overview/install/quickstart + a docs link, and ship a Pages deploy workflow (push to `main`, no-ops until Pages is enabled in repo settings). (ref: WORKLOG#2026-06-04)
+  - [x] T-012.1 Scaffold VitePress under `docs/` (`.vitepress/config.mjs`, home page, nav/sidebar, `base: '/element-js-ssr-renderer/'`, local search); add `vitepress` devDep + `docs:dev/build/preview` scripts; gitignore `dist`/`cache`
+  - [x] T-012.2 Migrate README prose into guide/concepts/resolving/frameworks/limitations pages
+  - [x] T-012.3 New API reference page (renderToString/Async, lazy, fromDirectory, elementSSR, types, subpath exports)
+  - [x] T-012.4 Slim `README.md` to overview + install + quickstart + docs link
+  - [x] T-012.5 GitHub Actions `deploy-docs.yml` (build + deploy to Pages on push to `main`)
 - [ ] T-001 Fix `SpreadAttributesDirective.stringify()` in `@webtides/element-js` to skip `undefined`/`null`/`NaN` like its `update()` does (SSR currently leaks `name='undefined'`)
   - [ ] T-001.1 Mirror the `update()` guard in `stringify()` (directives.js)
   - [ ] T-001.2 Add a test covering the SSR omit-attribute case
@@ -24,8 +30,7 @@ Hierarchical task list for this project. Both the user and any agents read and u
 - [ ] T-007 Implement server→client state transport (element-js `serializeState` / `ejs:key`) so stateful components hydrate with their server-rendered state instead of re-deriving from property defaults
   - [ ] T-007.1 Assign each rendered component a **stable, deterministic** `ejs:key` and stamp it on the host element — must match between server output and client hydration, so it can't use element-js' `randomUUID()` (derive from tag + document position/order)
   - [ ] T-007.2 Collect each component's `serializeState()` output into one merged state map and emit it as a single `<script type="ejs/json">…</script>` in the body — the exact location/format element-js reads on the client (avoid element-js' DOM-based helpers, which need `document.scripts`/`createElement`/`body`; build the JSON directly)
-  - [ ] T-007.3 Handle `Store` referen
-  - ces — serialize stores as `Store/<uuid>` with their state under that uuid, and de-duplicate stores shared across components, mirroring element-js' replacer/reviver (SerializeStateHelper.js)
+  - [ ] T-007.3 Handle `Store` references — serialize stores as `Store/<uuid>` with their state under that uuid, and de-duplicate stores shared across components, mirroring element-js' replacer/reviver (SerializeStateHelper.js)
   - [ ] T-007.4 Add an opt-in surface (e.g. a `serializeState` option on `renderToString` / `elementSSR`) that sets `globalThis.elementJsConfig.serializeState`; document the import-order/SSR caveats
   - [ ] T-007.5 Tests: round-trip a component with non-default state — assert `ejs:key` on the host, presence/shape of the `ejs/json` script, and that restored values match the server state (incl. a shared-`Store` case)
 - [ ] T-010 Add a Nuxt example under `examples/nuxt/` — integrate the renderer via a Nitro `render:response` hook (shim-first → `renderToStringAsync` over the response HTML → client `define`), reusing the `x-counter` / `x-greeting` components for parity with the Astro example. Ship a `./nuxt` adapter under `src/adapters/` (reuse `transformHtmlResponse`) with a test mirroring `test/astro.test.js` (ref: T-002.1, T-008, `examples/README.md`)

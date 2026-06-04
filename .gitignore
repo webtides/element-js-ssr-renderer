@@ -6,6 +6,10 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# VitePress docs site
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
 # Logs
 *.log
 npm-debug.log*

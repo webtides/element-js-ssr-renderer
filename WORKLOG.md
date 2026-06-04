@@ -21,6 +21,16 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-04 — VitePress docs site + GitHub Pages prep (T-012)
+
+**Tasks:** T-012
+
+- Stood up a VitePress docs site under `docs/` as the **single source of truth** for the deep docs: `.vitepress/config.mjs` (nav + grouped sidebar, local search, `base: '/element-js-ssr-renderer/'` for the Pages project site, `cleanUrls`, editLink). Added `vitepress` devDep and `docs:dev`/`docs:build`/`docs:preview` scripts; gitignored `docs/.vitepress/{dist,cache}`. `files` stays `["src"]` so docs aren't published to npm.
+- Migrated the monolithic `README.md` into structured pages: guide (introduction/how-it-works, installation, quick-start), core concepts (NEW rendering & hydration page synthesized from `render-to-string.js`; style handling), resolving-components (the eager-vs-lazy / multi-source section), framework integrations (Astro, SvelteKit, Nuxt-planned), and limitations & roadmap. Added a NEW API reference page (`api/index.md`) with verified signatures for `renderToString`/`renderToStringAsync`/`lazy`/`fromDirectory`/`elementSSR`, the type defs (`Registry`/`ImporterMap`/`ResolveFn`/`Source`/`onUnresolved`), and the subpath-export table.
+- Slimmed `README.md` to overview + install + quickstart + a prominent docs link (`https://webtides.github.io/element-js-ssr-renderer/`) + examples pointer; the npm landing page no longer duplicates the deep content.
+- Added `.github/workflows/deploy-docs.yml` — builds + deploys to Pages on push to `main` (path-filtered) and `workflow_dispatch`; inert until the user enables **Settings → Pages → Source = GitHub Actions** (documented in a header comment).
+- Verified: `npm run docs:build` clean (VitePress fails on dead links, so all internal links resolve); 41/41 Vitest still green; `dist/` emitted under the configured base.
+
 ## 2026-06-03 — SvelteKit example + `./sveltekit` adapter (T-011)
 
 **Tasks:** T-011

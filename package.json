@@ -20,7 +20,10 @@
   ],
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "dependencies": {
     "node-html-parser": "^7.0.1"
@@ -31,6 +34,7 @@
   "devDependencies": {
     "@webtides/element-js": "^1.2.11",
     "@webtides/element-library": "file:../element-library",
+    "vitepress": "^1.6.4",
     "vitest": "^4.0.0"
   }
 }
