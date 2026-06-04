@@ -21,6 +21,13 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-04 — T-014 fixed upstream in element-library 0.1.2; full Nuxt build green
+
+**Tasks:** T-014
+
+- `@webtides/element-library@0.1.2` ships the previously-missing runtime `src/utils/` (`npm pack` confirms `package/src/utils/transitions.js` + `body-scroll.js`), closing the packaging omission that blocked `el-notification`. Bumped the dependency to `^0.1.2` in the root and `examples/nuxt` `package.json`s and reinstalled.
+- **Unblocked the full Nuxt build:** `npm run build` in `examples/nuxt` now succeeds, and the built server (`node .output/server/index.mjs`) SSRs the whole page — 9 DSD `<template shadowrootmode>` blocks, and all components render incl. the previously-failing `el-notification` (plus 5×`el-button`, 2×`x-counter`, light-DOM `x-greeting`). T-014 done.
+
 ## 2026-06-04 — Verified T-014 still unfixed in element-library 0.1.1
 
 **Tasks:** T-014

@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@webtides/element-js": "^1.2.11",
-    "@webtides/element-library": "^0.1.0",
+    "@webtides/element-library": "^0.1.2",
     "vitepress": "^1.6.4",
     "vitest": "^4.0.0"
   }
