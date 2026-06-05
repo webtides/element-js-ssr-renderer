@@ -21,6 +21,24 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-05 — Follow-up: resolution-surface redesign supersedes the naming tweak (T-018)
+
+**Tasks:** T-018, T-003.2, T-003.3
+
+- Refines the entry below. The `ImporterMap`→`LazyElementMap` rename (old T-003.3) grew, through design discussion, into a full resolution-surface redesign promoted to top-level **T-018**; T-003.3 retired as superseded.
+- **Vocabulary collapsed to one named type.** Vite names none of this data (`import.meta.glob` returns an anonymous `Record<string, () => Promise<unknown>>`), so we align by not over-naming: a single **`Catalog`** = `Record<string, CustomElementConstructor | (() => Promise<unknown>)>`. The eager class reuses the platform's `CustomElementConstructor` (not a coined `Definition`); the lazy value is Vite's inline thunk (so `import.meta.glob()` output is directly assignable); the `(tag) => …` function form stays accepted but unnamed. Retires `Source` / `ImporterMap` / `ResolveFn` / `Registry`.
+  - Name path: rejected `registry` (like `CustomElementRegistry`, it implies elements _already defined_ — ours is a list still to be defined), `./elements`/`loaders`/`modules` (collide with element-library's `./all`, or read as a list when the value is an object, or mis-describe eager classes). **`catalog`** — singular collective, neutral about eager-vs-lazy, honest that nothing's registered yet.
+- **`lazy()` is being removed**, not renamed. The renderer will **auto-detect** each `Catalog` entry: class-vs-loader by `prototype instanceof HTMLElement`, tag-key-vs-path-key by `/` presence (→ basename). So a plain `Catalog` and raw `import.meta.glob()` both go straight into `resolve` with no wrapper. A thin optional `glob(map, { pathToTag, pick })` remains only for filename≠tag / non-default exports.
+- **Library export** is `@webtides/element-library/catalog` (was `./ssr`), **CLI** is `element-js-ssr-renderer catalog` — bin named for the package (not a truncation like `element-ssr`/`element-registry` that matches nothing), with `catalog` as the subcommand. T-003.2 rewritten to this vocabulary and marked `blocked by: T-018`.
+
+## 2026-06-05 — Decided the canonical third-party-library SSR path: the library ships its own map (T-003.2, T-003.3)
+
+**Tasks:** T-003.2, T-003.3
+
+- **Decision:** the recommended way to consume a CEM-shipping component library (element-library) under SSR is for **the library to ship its own lazy element map** (`./ssr`), not for the consumer to codegen or hand-import. Rationale: a map that ships _inside_ the package uses package-internal relative specifiers (`() => import("./src/components/button/button.js")`) that resolve in any consumer's bundle regardless of node_modules layout — bundler-traceable on every target (Node/Nitro/edge/webpack/Vite), zero consumer codegen, one-line consume (`lazy(elements)`). The renderer can't produce this itself (no module graph or public-export knowledge at runtime); only the package can. The renderer's contribution is already shipped — `element-ssr gen --manifest` (T-013) generates exactly this when run at the package root. Settles the "this feels manual" thread on the examples' eager `import Button/Notification` blocks: they're manual only because element-library hasn't run the generator on itself yet.
+- Rewrote **T-003.2** from "optional bundled/edge fallback" → the canonical path, with a concrete element-library recipe (`gen:ssr` + `prepack`, `./ssr` export) and two sub-tasks (T-003.2.1 release wiring; T-003.2.2 convert examples + document the responsibility split once published).
+- Added **T-003.3** (renderer-side naming precursor): rename `ImporterMap` → `LazyElementMap` (the old name collides with the browser **import map** standard, an unrelated specifier→URL mechanism) and name the thunk type `ElementLoader`. Pre-release, no deprecation alias. Note: the `tag → () => import()` shape is not invented here — it's the standard dynamic-import thunk idiom (same shape as `import.meta.glob`), over CEM data, with a thin tag-keyed convention.
+
 ## 2026-06-04 — Collapse resolution API: delete runtime resolvers, single async `renderToString` (T-017)
 
 **Tasks:** T-017
