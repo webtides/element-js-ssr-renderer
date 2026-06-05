@@ -21,6 +21,14 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-05 — Node/Connect adapter `./node` (T-015.1, partial — adapter + test)
+
+**Tasks:** T-015.1
+
+- Added `src/adapters/node.js` (`./node` export): a Connect-style `(req, res, next)` middleware for plain Node servers (Express/Connect/raw `http`) — the widest-reach adapter, no streaming concern. Buffers the response (overriding `res.write`/`res.end`), transforms `text/html` once via `renderToString`, and fixes `Content-Length`. Non-HTML passes through; if headers were already flushed or the transform throws, the original body is sent unchanged (graceful degradation). Takes the same `resolve`/`onUnresolved`/`serializeState` options as the other adapters. Unrelated to the removed `./resolve/node` filesystem resolver (T-017) — this is HTTP plumbing, not tag resolution; the name collision is only the word "node".
+- `test/node.test.js` (6): HTML render, lazy load-only-what's-present, multi-`write()` assembly, Content-Length update, non-HTML pass-through, headers-already-flushed pass-through. Suite green at 58.
+- **Still open for T-015.1:** the runnable Express example (`examples/express/`) + docs (`frameworks/node.md`, README/API tables), per the "adapter lands with its example" rule. Deferred.
+
 ## 2026-06-05 — element-library `./catalog` scaffolding (T-003.2, cross-repo, parked)
 
 **Tasks:** T-003.2, T-003.2.1
