@@ -6,9 +6,9 @@ the server, then hydrates them in the browser. It exercises **both component
 sources at once**:
 
 - **element-library components** (`el-button`, `el-notification`) — loaded
-  eagerly into a static `registry`;
+  eagerly into a static `{ tag: Class }` catalog;
 - **local components** (`x-counter`, `x-greeting`) — authored in `elements/` and
-  resolved **lazily** via a **generated** importer map (`npm run gen:components`),
+  resolved **lazily** via a **generated** catalog (`npm run gen:catalog`),
   so only the ones on a page are loaded.
 
 …and both render paths:
@@ -53,14 +53,14 @@ npm run build && npm run preview
 
 ## How it's wired
 
-| File                               | Role                                                                                          |
-| ---------------------------------- | --------------------------------------------------------------------------------------------- |
-| `server/plugins/element-ssr.js`    | Imports the DOM shim first, then registers `elementSSR(...)` on `render:response`.            |
-| `server/components.generated.js`   | Generated lazy importer map for `elements/` (`npm run gen:components`) — do not edit by hand. |
-| `plugins/element-define.client.js` | Browser-only: loads each component's `define` so the pre-rendered tags hydrate.               |
-| `elements/*.js`                    | Local element-js components (default-export the class + a `define()`).                        |
-| `app.vue`                          | Authors the custom elements as plain HTML + injects the global styles/tokens.                 |
-| `nuxt.config.ts`                   | `isCustomElement` so Vue passes the tags through; `nitro.externals.inline` for import order.  |
+| File                               | Role                                                                                         |
+| ---------------------------------- | -------------------------------------------------------------------------------------------- |
+| `server/plugins/element-ssr.js`    | Imports the DOM shim first, then registers `elementSSR(...)` on `render:response`.           |
+| `server/catalog.js`                | Generated lazy catalog for `elements/` (`npm run gen:catalog`) — do not edit by hand.        |
+| `plugins/element-define.client.js` | Browser-only: loads each component's `define` so the pre-rendered tags hydrate.              |
+| `elements/*.js`                    | Local element-js components (default-export the class + a `define()`).                       |
+| `app.vue`                          | Authors the custom elements as plain HTML + injects the global styles/tokens.                |
+| `nuxt.config.ts`                   | `isCustomElement` so Vue passes the tags through; `nitro.externals.inline` for import order. |
 
 ### Two Nuxt-specific notes
 
@@ -68,8 +68,8 @@ npm run build && npm run preview
   `<x-counter>` / `<el-button>` as unresolved Vue components. `nuxt.config.ts`
   marks any hyphenated tag as a native custom element so it renders verbatim.
 - **No `import.meta.glob`.** That's a Vite feature, but Nuxt's server runs on
-  Nitro (rollup). Instead of hand-writing a `lazy({...})` map, we **generate** one
-  with `element-ssr gen ./elements -o ./server/components.generated.js` (run via
-  `npm run gen:components`, also wired as `predev`/`prebuild`). The output is a
-  static map of `() => import('../elements/x-*.js')` thunks Nitro can trace and
+  Nitro (rollup). Instead of hand-writing the catalog, we **generate** it with
+  `element-js-ssr-renderer catalog ./elements -o ./server/catalog.js` (run via
+  `npm run gen:catalog`, also wired as `predev`/`prebuild`). The output is a
+  static `Catalog` of `() => import('../elements/x-*.js')` thunks Nitro can trace and
   code-split — a component module is only imported when its tag appears on a page.

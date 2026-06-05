@@ -39,14 +39,14 @@ place rather than re-rendering them — no flash of empty/unstyled content.
 
 ## Subpath exports
 
-| Import                                        | What it is                                          |
-| --------------------------------------------- | --------------------------------------------------- |
-| `@webtides/element-js-ssr-renderer`           | `renderToString`, `lazy`                            |
-| `@webtides/element-js-ssr-renderer/dom-shim`  | DOM globals shim — import first                     |
-| `@webtides/element-js-ssr-renderer/astro`     | `elementSSR` Astro middleware                       |
-| `@webtides/element-js-ssr-renderer/nuxt`      | `elementSSR` Nitro `render:response` handler        |
-| `@webtides/element-js-ssr-renderer/sveltekit` | `elementSSR` SvelteKit `handle` hook                |
-| `@webtides/element-js-ssr-renderer/generate`  | `generateLazyMap` — build-time static-map generator |
+| Import                                        | What it is                                    |
+| --------------------------------------------- | --------------------------------------------- |
+| `@webtides/element-js-ssr-renderer`           | `renderToString`, `glob`                      |
+| `@webtides/element-js-ssr-renderer/dom-shim`  | DOM globals shim — import first               |
+| `@webtides/element-js-ssr-renderer/astro`     | `elementSSR` Astro middleware                 |
+| `@webtides/element-js-ssr-renderer/nuxt`      | `elementSSR` Nitro `render:response` handler  |
+| `@webtides/element-js-ssr-renderer/sveltekit` | `elementSSR` SvelteKit `handle` hook          |
+| `@webtides/element-js-ssr-renderer/generate`  | `buildCatalog` — build-time catalog generator |
 
-The package also installs an `element-ssr` CLI (`element-ssr gen`) for generating a static lazy map at
-build time. See the [API reference](/api/) for full signatures.
+The package also installs an `element-js-ssr-renderer` CLI (`element-js-ssr-renderer catalog`) for generating
+a static catalog at build time. See the [API reference](/api/) for full signatures.

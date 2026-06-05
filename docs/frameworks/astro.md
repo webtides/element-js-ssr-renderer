@@ -23,13 +23,12 @@ components:
 // src/middleware.js
 import "@webtides/element-js-ssr-renderer/dom-shim";
 import { elementSSR } from "@webtides/element-js-ssr-renderer/astro";
-import { lazy } from "@webtides/element-js-ssr-renderer";
 import Button from "@webtides/element-library/button";
 
 export const onRequest = elementSSR({
   resolve: [
     { "el-button": Button }, // eager base components
-    lazy(import.meta.glob("../components/*.js")), // overrides the above on a tag clash
+    import.meta.glob("../components/*.js"), // overrides the above on a tag clash
   ],
 });
 ```
@@ -40,8 +39,8 @@ Then author components normally in `.astro` files and load their `define` module
 
 A complete, runnable version of this setup lives in
 [`examples/astro/`](https://github.com/webtides/element-js-ssr-renderer/tree/main/examples/astro) — a
-`@astrojs/node` app that composes element-library components (an eager static map) with its own components
-(`lazy(import.meta.glob(...))`), covering both the shadow (DSD) and light-DOM paths.
+`@astrojs/node` app that composes element-library components (an eager static catalog) with its own components
+(`import.meta.glob(...)`), covering both the shadow (DSD) and light-DOM paths.
 
 ```bash
 cd examples/astro && npm install && npm run dev

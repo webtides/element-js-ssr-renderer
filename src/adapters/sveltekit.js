@@ -13,13 +13,12 @@ import { renderToString } from "../render-to-string.js";
  * // src/hooks.server.js
  * import '@webtides/element-js-ssr-renderer/dom-shim';        // must come first: installs HTMLElement etc.
  * import { elementSSR } from '@webtides/element-js-ssr-renderer/sveltekit';
- * import { lazy } from '@webtides/element-js-ssr-renderer';
  * import Button from '@webtides/element-library/button';
  *
  * export const handle = elementSSR({
  *     resolve: [
  *         { 'el-button': Button },                              // eager element-library components
- *         lazy(import.meta.glob('./components/*.js')),          // this project's — loaded on demand
+ *         import.meta.glob('./components/*.js'),                // this project's — loaded on demand
  *     ],
  * });
  * ```
@@ -37,7 +36,7 @@ import { renderToString } from "../render-to-string.js";
  * defaults; enable element-js' matching `serializeState` config on the client too.
  *
  * @param {{
- *   resolve?: import('../render-to-string.js').Source | import('../render-to-string.js').Source[],
+ *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
  *   serializeState?: boolean,
  * }} [options]

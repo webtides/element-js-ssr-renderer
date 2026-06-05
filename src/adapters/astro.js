@@ -7,8 +7,9 @@ import { transformHtmlResponse } from "./transform-response.js";
  * imported there first, before any component module is evaluated.
  *
  * Components are resolved through {@link import('../render-to-string.js').renderToString} via the
- * `resolve` option, so you can hand them over eagerly or lazily. A static `{ tag: Class }` source
- * loads everything up front:
+ * `resolve` option, which takes a {@link import('../render-to-string.js').Catalog} — a `{ tag: … }`
+ * map whose values are eager classes and/or lazy `() => import()` loaders, auto-detected. A static
+ * `{ tag: Class }` catalog loads everything up front:
  *
  * ```js
  * // src/middleware.js
@@ -23,19 +24,19 @@ import { transformHtmlResponse } from "./transform-response.js";
  * ```
  *
  * Or resolve lazily so only the components on a given page are ever loaded — the cold-start / edge
- * path. `import.meta.glob` (Vite, which Astro uses) produces exactly the importer map `lazy()` wants,
- * and an array of sources composes library + project components (later wins on a tag clash):
+ * path. `import.meta.glob` (Vite, which Astro uses) returns a lazy `Catalog` as-is, so it drops
+ * straight into `resolve` (no wrapper), and an array of sources composes library + project
+ * components (later wins on a tag clash):
  *
  * ```js
  * import '@webtides/element-js-ssr-renderer/dom-shim';
  * import { elementSSR } from '@webtides/element-js-ssr-renderer/astro';
- * import { lazy } from '@webtides/element-js-ssr-renderer';
  * import Button from '@webtides/element-library/button';
  *
  * export const onRequest = elementSSR({
  *     resolve: [
  *         { 'el-button': Button },                          // eager base components
- *         lazy(import.meta.glob('../components/*.js')),     // this project's — overrides the above
+ *         import.meta.glob('../components/*.js'),           // this project's — overrides the above
  *     ],
  * });
  * ```
@@ -48,7 +49,7 @@ import { transformHtmlResponse } from "./transform-response.js";
  * defaults; enable element-js' matching `serializeState` config on the client too.
  *
  * @param {{
- *   resolve?: import('../render-to-string.js').Source | import('../render-to-string.js').Source[],
+ *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
  *   serializeState?: boolean,
  * }} [options]

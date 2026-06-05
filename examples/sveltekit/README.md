@@ -6,9 +6,9 @@ server, then hydrates them in the browser. It exercises **both component sources
 at once**:
 
 - **element-library components** (`el-button`, `el-notification`) — loaded
-  eagerly into a static `registry`;
+  eagerly into a static `{ tag: Class }` catalog;
 - **local components** (`x-counter`, `x-greeting`) — authored in
-  `src/components/` and resolved **lazily** via `lazy(import.meta.glob(...))`,
+  `src/components/` and resolved **lazily** via `import.meta.glob(...)`,
   so only the ones on a page are loaded.
 
 …and both render paths:

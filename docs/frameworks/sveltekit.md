@@ -9,13 +9,12 @@ final chunk:
 // src/hooks.server.js
 import "@webtides/element-js-ssr-renderer/dom-shim";
 import { elementSSR } from "@webtides/element-js-ssr-renderer/sveltekit";
-import { lazy } from "@webtides/element-js-ssr-renderer";
 import Button from "@webtides/element-library/button";
 
 export const handle = elementSSR({
   resolve: [
     { "el-button": Button }, // eager element-library components
-    lazy(import.meta.glob("./components/*.js")), // this project's — loaded on demand
+    import.meta.glob("./components/*.js"), // this project's — loaded on demand
   ],
 });
 ```
@@ -34,8 +33,8 @@ shadow components to adopt in `app.html` as plain CSS. See [Style handling](/con
 
 A complete, runnable version lives in
 [`examples/sveltekit/`](https://github.com/webtides/element-js-ssr-renderer/tree/main/examples/sveltekit) —
-an `@sveltejs/adapter-node` app composing element-library components (an eager static map) with its own
-(`lazy(import.meta.glob(...))`), covering both the shadow (DSD) and light-DOM paths.
+an `@sveltejs/adapter-node` app composing element-library components (an eager static catalog) with its own
+(`import.meta.glob(...)`), covering both the shadow (DSD) and light-DOM paths.
 
 ```bash
 cd examples/sveltekit && npm install && npm run dev

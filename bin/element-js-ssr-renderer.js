@@ -1,22 +1,23 @@
 #!/usr/bin/env node
 /**
- * `element-ssr` CLI. Currently one subcommand:
+ * `element-js-ssr-renderer` CLI. Currently one subcommand:
  *
- *   element-ssr gen <dir> -o <out.js>
- *   element-ssr gen --manifest <custom-elements.json> [--base <pkg-root>] -o <out.js>
+ *   element-js-ssr-renderer catalog <dir> -o <catalog.js>
+ *   element-js-ssr-renderer catalog --manifest <custom-elements.json> [--base <pkg-root>] -o <catalog.js>
  *
- * Generates a static, bundler-traceable lazy importer map (see src/generate-lazy-map.js) so you
- * never hand-write `lazy({ ... })` on bundled / edge targets.
+ * Generates a static, bundler-traceable Catalog (see src/generate-catalog.js) so you never
+ * hand-write `{ tag: () => import(...) }` on bundled / edge targets. The emitted module drops
+ * straight into `resolve` — no wrapper.
  */
 
 import { parseArgs } from "node:util";
-import { generateLazyMap } from "../src/generate-lazy-map.js";
+import { buildCatalog } from "../src/generate-catalog.js";
 
-const USAGE = `element-ssr gen — generate a static lazy importer map
+const USAGE = `element-js-ssr-renderer catalog — generate a static Catalog
 
 Usage:
-  element-ssr gen <dir> -o <out.js>
-  element-ssr gen --manifest <custom-elements.json> [--base <pkg-root>] -o <out.js>
+  element-js-ssr-renderer catalog <dir> -o <catalog.js>
+  element-js-ssr-renderer catalog --manifest <custom-elements.json> [--base <pkg-root>] -o <catalog.js>
 
 Options:
   -o, --out <file>       Output module path (required)
@@ -25,7 +26,7 @@ Options:
   -h, --help             Show this help`;
 
 function fail(msg) {
-  console.error(`element-ssr: ${msg}\n\n${USAGE}`);
+  console.error(`element-js-ssr-renderer: ${msg}\n\n${USAGE}`);
   process.exit(1);
 }
 
@@ -35,7 +36,7 @@ if (command === "-h" || command === "--help" || command === undefined) {
   console.log(USAGE);
   process.exit(0);
 }
-if (command !== "gen") fail(`unknown command "${command}"`);
+if (command !== "catalog") fail(`unknown command "${command}"`);
 
 let parsed;
 try {
@@ -65,14 +66,14 @@ if ((dir == null) === (values.manifest == null))
   fail("provide either a <dir> positional or --manifest <file>, not both");
 
 try {
-  const { outFile, entries } = generateLazyMap({
+  const { outFile, entries } = buildCatalog({
     dir,
     manifest: values.manifest,
     base: values.base,
     out: values.out,
   });
   console.log(
-    `element-ssr: wrote ${entries.length} component${entries.length === 1 ? "" : "s"} → ${outFile}`,
+    `element-js-ssr-renderer: wrote ${entries.length} component${entries.length === 1 ? "" : "s"} → ${outFile}`,
   );
 } catch (err) {
   fail(err.message);

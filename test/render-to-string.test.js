@@ -1,6 +1,6 @@
 import "../src/dom-shim.js"; // must precede any component import
 import { describe, it, expect, vi } from "vitest";
-import { renderToString, lazy } from "../src/index.js";
+import { renderToString, glob } from "../src/index.js";
 
 import Button from "@webtides/element-library/button";
 import InputField from "@webtides/element-library/input-field";
@@ -33,7 +33,7 @@ class AdoptSelector extends TemplateElement {
   }
 }
 
-const registry = {
+const catalog = {
   "el-button": Button,
   "el-input-field": InputField,
   "el-accordion-group": AccordionGroup,
@@ -42,7 +42,7 @@ const registry = {
   "el-adopt-selector": AdoptSelector,
 };
 
-const render = (html) => renderToString(html, { resolve: registry });
+const render = (html) => renderToString(html, { resolve: catalog });
 
 /** Extract the contents of the first declarative shadow root in `out`. */
 const shadowOf = (out) =>
@@ -208,16 +208,29 @@ describe("renderToString — resolution sources", () => {
     expect(out).toContain('<template shadowrootmode="open">');
   });
 
+  it("auto-detects eager classes and lazy loaders within one catalog", async () => {
+    const loaded = vi.fn(() => Promise.resolve({ default: InputField }));
+    const out = await renderToString(
+      "<el-button>x</el-button><el-input-field></el-input-field>",
+      // a single Catalog mixing an eager class (Button) and a lazy loader (InputField),
+      // no wrapper — the renderer tells them apart via prototype instanceof HTMLElement
+      { resolve: { "el-button": Button, "el-input-field": loaded } },
+    );
+    expect(out.match(/shadowrootmode/g)?.length).toBe(1); // Button (shadow)
+    expect(out).toContain("<!--template-part-->"); // InputField (light) rendered
+    expect(loaded).toHaveBeenCalledTimes(1);
+  });
+
   it("imports only the components actually present on the page", async () => {
     const buttonImporter = vi.fn(() => Promise.resolve({ default: Button }));
     const inputImporter = vi.fn(() => Promise.resolve({ default: InputField }));
-    const source = lazy({
-      "el-button": buttonImporter,
-      "el-input-field": inputImporter,
-    });
 
     const out = await renderToString("<el-button>x</el-button>", {
-      resolve: source,
+      // a lazy-loader Catalog dropped straight into resolve — no wrapper
+      resolve: {
+        "el-button": buttonImporter,
+        "el-input-field": inputImporter,
+      },
     });
 
     expect(out).toContain("shadowrootmode");
@@ -225,19 +238,19 @@ describe("renderToString — resolution sources", () => {
     expect(inputImporter).not.toHaveBeenCalled(); // not on the page → never loaded
   });
 
-  it("derives tags from module-path keys (import.meta.glob shape)", async () => {
-    const source = lazy({
-      "./components/el-button.js": () => Promise.resolve({ default: Button }),
-    });
+  it("derives tags from module-path keys (raw import.meta.glob shape)", async () => {
     const out = await renderToString("<el-button>x</el-button>", {
-      resolve: source,
+      // import.meta.glob output is a Catalog as-is — path keys, loader values, no wrapper
+      resolve: {
+        "./components/el-button.js": () => Promise.resolve({ default: Button }),
+      },
     });
     expect(out).toContain("shadowrootmode");
   });
 
-  it("honors lazy() pathToTag and pick overrides", async () => {
+  it("honors glob() pathToTag and pick overrides", async () => {
     const out = await renderToString("<el-button>x</el-button>", {
-      resolve: lazy(
+      resolve: glob(
         { "buttons/Btn.entry": () => Promise.resolve({ Btn: Button }) },
         { pathToTag: () => "el-button", pick: (mod) => mod.Btn },
       ),
@@ -256,10 +269,10 @@ describe("renderToString — resolution sources", () => {
 
   it("resolves custom elements that appear only in generated templates", async () => {
     const out = await renderToString("<el-wrapper></el-wrapper>", {
-      resolve: lazy({
+      resolve: {
         "el-wrapper": () => Promise.resolve({ default: Wrapper }),
         "el-button": () => Promise.resolve({ default: Button }),
-      }),
+      },
     });
     // wrapper's shadow + the button it renders inside that shadow → two declarative shadow roots
     expect(out.match(/shadowrootmode/g)?.length).toBe(2);
@@ -303,7 +316,7 @@ describe("unresolved-tag warning (dev)", () => {
   it("can be silenced with a custom onUnresolved", async () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     await renderToString("<my-unknown></my-unknown>", {
-      resolve: registry,
+      resolve: catalog,
       onUnresolved: () => {},
     });
     expect(spy).not.toHaveBeenCalled();
@@ -356,7 +369,7 @@ class CartBadge extends TemplateElement {
   }
 }
 
-const stateRegistry = {
+const stateCatalog = {
   "state-counter": StateCounter,
   "cart-badge": CartBadge,
 };
@@ -371,7 +384,7 @@ describe("state transport (serializeState)", () => {
   it("does not stamp keys or emit a state script by default", async () => {
     const out = await renderToString(
       '<state-counter count="3"></state-counter>',
-      { resolve: stateRegistry },
+      { resolve: stateCatalog },
     );
     expect(out).not.toContain("ejs:key");
     expect(out).not.toContain("ejs/json");
@@ -380,7 +393,7 @@ describe("state transport (serializeState)", () => {
   it("stamps a deterministic ejs:key on each rendered host", async () => {
     const out = await renderToString(
       "<state-counter></state-counter><state-counter></state-counter>",
-      { resolve: stateRegistry, serializeState: true },
+      { resolve: stateCatalog, serializeState: true },
     );
     expect(out).toContain('ejs:key="state-counter-0"');
     expect(out).toContain('ejs:key="state-counter-1"');
@@ -390,11 +403,11 @@ describe("state transport (serializeState)", () => {
     const input =
       '<state-counter count="1"></state-counter><state-counter count="2"></state-counter>';
     const a = await renderToString(input, {
-      resolve: stateRegistry,
+      resolve: stateCatalog,
       serializeState: true,
     });
     const b = await renderToString(input, {
-      resolve: stateRegistry,
+      resolve: stateCatalog,
       serializeState: true,
     });
     expect(a).toBe(b);
@@ -403,7 +416,7 @@ describe("state transport (serializeState)", () => {
   it("emits one ejs/json script whose state matches the server values", async () => {
     const out = await renderToString(
       '<state-counter count="3" label="Pears"></state-counter>',
-      { resolve: stateRegistry, serializeState: true },
+      { resolve: stateCatalog, serializeState: true },
     );
     expect(out.match(/type="ejs\/json"/g)?.length).toBe(1);
     const state = stateOf(out);
@@ -414,7 +427,7 @@ describe("state transport (serializeState)", () => {
   it("restores a round-tripped component to its server state", async () => {
     const out = await renderToString(
       '<state-counter count="7"></state-counter>',
-      { resolve: stateRegistry, serializeState: true },
+      { resolve: stateCatalog, serializeState: true },
     );
     const state = stateOf(out);
     // simulate element-js' restoreState: Object.assign(instance, state[key])
@@ -429,7 +442,7 @@ describe("state transport (serializeState)", () => {
   it("serializes a shared Store once, referenced by each host", async () => {
     const out = await renderToString(
       "<cart-badge></cart-badge><cart-badge></cart-badge>",
-      { resolve: stateRegistry, serializeState: true },
+      { resolve: stateCatalog, serializeState: true },
     );
     const state = stateOf(out);
     // both hosts reference the store by key; the store's state lives once under that key

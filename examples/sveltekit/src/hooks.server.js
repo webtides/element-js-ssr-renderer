@@ -4,9 +4,8 @@
 import "@webtides/element-js-ssr-renderer/dom-shim";
 
 import { elementSSR } from "@webtides/element-js-ssr-renderer/sveltekit";
-import { lazy } from "@webtides/element-js-ssr-renderer";
 
-// element-library components, loaded eagerly into a static registry. These are
+// element-library components, loaded eagerly as a static catalog. These are
 // imported up front (as the class, never the `/define` module — that's
 // client-only), so they're always available to the renderer.
 import Button from "@webtides/element-library/button";
@@ -15,14 +14,15 @@ import Notification from "@webtides/element-library/notification";
 // This example composes two component sources to show the headline resolution
 // feature (T-008) — `resolve` takes an array, later sources win on a tag clash:
 //
-//   • a static `{ tag: Class }` source — element-library components, eagerly
+//   • a static `{ tag: Class }` catalog — element-library components, eagerly
 //     imported above;
-//   • a lazy source — this project's own components under `./components/*.js`,
+//   • a lazy catalog — this project's own components under `./components/*.js`,
 //     code-split by Vite's `import.meta.glob` and imported on demand, so only the
 //     ones actually on a page are ever loaded.
 //
-// `lazy` derives each tag from the file's basename (`x-counter.js` → `x-counter`)
-// and picks the class from the module's default export.
+// `import.meta.glob` returns a lazy Catalog as-is, so it drops straight into
+// `resolve` — no wrapper. The renderer derives each tag from the file's basename
+// (`x-counter.js` → `x-counter`) and picks the module's default export.
 //
 // `elementSSR` returns a SvelteKit `handle` hook. It buffers the rendered page
 // chunks and runs the whole document through the renderer on the final chunk —
@@ -33,6 +33,6 @@ export const handle = elementSSR({
       "el-button": Button,
       "el-notification": Notification,
     },
-    lazy(import.meta.glob("./components/*.js")),
+    import.meta.glob("./components/*.js"),
   ],
 });

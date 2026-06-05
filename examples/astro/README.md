@@ -5,9 +5,9 @@ pre-renders `@webtides/element-js` custom elements on the server, then hydrates
 them in the browser. It exercises **both component sources at once**:
 
 - **element-library components** (`el-button`, `el-notification`) — loaded
-  eagerly into a static `registry`;
+  eagerly into a static `{ tag: Class }` catalog;
 - **local components** (`x-counter`, `x-greeting`) — authored in
-  `src/components/` and resolved **lazily** via `lazy(import.meta.glob(...))`,
+  `src/components/` and resolved **lazily** via `import.meta.glob(...)`,
   so only the ones on a page are loaded.
 
 …and both render paths:
@@ -46,16 +46,16 @@ npm run build && npm run preview
 2. **Disable JavaScript and reload.** Everything still shows, styled — no flash
    of empty/unstyled content. (The counter buttons just won't do anything yet.)
 3. **Re-enable JavaScript.** Click the counter's **+ / −** buttons: they update.
-   That's element-js *hydrating* the pre-rendered DSD (matching the
+   That's element-js _hydrating_ the pre-rendered DSD (matching the
    `<!--template-part-->` markers in the SSR output) rather than re-rendering
    from scratch.
 
 ## How it's wired
 
-| File                      | Role                                                                   |
-| ------------------------- | ---------------------------------------------------------------------- |
-| `src/middleware.js`       | Imports the DOM shim first, then `elementSSR(...)` with both sources.  |
-| `src/components/*.js`     | Local element-js components (default-export the class + a `define()`). |
-| `src/layouts/Base.astro`  | Global styles/tokens + the client `<script>` that loads each `define`. |
-| `src/pages/index.astro`   | Authors the custom elements as plain HTML.                             |
-| `astro.config.mjs`        | `output: "server"` + Node adapter, so middleware runs per request.     |
+| File                     | Role                                                                   |
+| ------------------------ | ---------------------------------------------------------------------- |
+| `src/middleware.js`      | Imports the DOM shim first, then `elementSSR(...)` with both sources.  |
+| `src/components/*.js`    | Local element-js components (default-export the class + a `define()`). |
+| `src/layouts/Base.astro` | Global styles/tokens + the client `<script>` that loads each `define`. |
+| `src/pages/index.astro`  | Authors the custom elements as plain HTML.                             |
+| `astro.config.mjs`       | `output: "server"` + Node adapter, so middleware runs per request.     |

@@ -8,7 +8,6 @@ any component module is evaluated:
 // server/plugins/element-ssr.js
 import "@webtides/element-js-ssr-renderer/dom-shim";
 import { elementSSR } from "@webtides/element-js-ssr-renderer/nuxt";
-import { lazy } from "@webtides/element-js-ssr-renderer";
 import Button from "@webtides/element-library/button";
 
 export default defineNitroPlugin((nitroApp) => {
@@ -17,8 +16,9 @@ export default defineNitroPlugin((nitroApp) => {
     elementSSR({
       resolve: [
         { "el-button": Button }, // eager element-library components
-        // Nitro isn't Vite, so `import.meta.glob` is unavailable — hand-write the importer map:
-        lazy({ "x-counter": () => import("../../elements/x-counter.js") }),
+        // Nitro isn't Vite, so `import.meta.glob` is unavailable — a hand-written
+        // (or generated) lazy catalog goes straight into `resolve`, no wrapper:
+        { "x-counter": () => import("../../elements/x-counter.js") },
       ],
     }),
   );
@@ -50,8 +50,8 @@ export default defineNuxtConfig({
 
 A complete, runnable version lives in
 [`examples/nuxt/`](https://github.com/webtides/element-js-ssr-renderer/tree/main/examples/nuxt) — a
-Nuxt app composing element-library components (an eager static map) with its own (`lazy({...})`), covering
-both the shadow (DSD) and light-DOM paths.
+Nuxt app composing element-library components (an eager static catalog) with its own (a generated lazy
+catalog), covering both the shadow (DSD) and light-DOM paths.
 
 ```bash
 cd examples/nuxt && npm install && npm run dev
@@ -64,8 +64,8 @@ See [Installation](/guide/installation#import-order-matters).
 :::
 
 ::: info No `import.meta.glob` on the server
-`import.meta.glob` is a Vite feature, but Nuxt's server runs on Nitro (rollup), so the lazy source is
-a hand-written `lazy({ 'x-counter': () => import('…') })` map rather than
-`lazy(import.meta.glob('./elements/*.js'))`. Same behavior — a module is only imported when its tag
-appears on the page.
+`import.meta.glob` is a Vite feature, but Nuxt's server runs on Nitro (rollup), so the lazy catalog is
+a generated `{ 'x-counter': () => import('…') }` map (via `element-js-ssr-renderer catalog`) rather than
+`import.meta.glob('./elements/*.js')`. Same behavior — a module is only imported when its tag appears on
+the page.
 :::

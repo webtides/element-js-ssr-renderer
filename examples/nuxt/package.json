@@ -5,10 +5,10 @@
   "type": "module",
   "description": "Runnable Nuxt example for @webtides/element-js-ssr-renderer — SSRs element-js custom elements (local + element-library) to Declarative Shadow DOM via a Nitro render:response hook, then hydrates them in the browser.",
   "scripts": {
-    "gen:components": "element-ssr gen ./elements -o ./server/components.generated.js",
-    "predev": "npm run gen:components",
+    "gen:catalog": "element-js-ssr-renderer catalog ./elements -o ./server/catalog.js",
+    "predev": "npm run gen:catalog",
     "dev": "nuxt dev",
-    "prebuild": "npm run gen:components",
+    "prebuild": "npm run gen:catalog",
     "build": "nuxt build",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare"

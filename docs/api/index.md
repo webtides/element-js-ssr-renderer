@@ -6,26 +6,26 @@ All signatures below are the public surface exported from the package's subpaths
 ## `renderToString(html, options?)`
 
 From `@webtides/element-js-ssr-renderer`. **Async.** Pre-renders every custom element in `html`, resolving
-each tag through the [`Source`](#source)(s) you pass as `resolve`, so only the components actually on the page
-are ever loaded — the cold-start / serverless / edge path.
+each tag through the [`Catalog`](#catalog)(s) you pass as `resolve`, so only the components actually on the
+page are ever loaded — the cold-start / serverless / edge path.
 
 ```ts
 renderToString(
   html: string,
   options?: {
-    resolve?: Source | Source[],
+    resolve?: Catalog | ResolveFn | Array<Catalog | ResolveFn>,
     onUnresolved?: (tag: string) => void,
     serializeState?: boolean,
   },
 ): Promise<string>
 ```
 
-| Param                    | Description                                                                                                                                                                                      |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `html`                   | An HTML document or fragment (e.g. a framework's rendered response).                                                                                                                             |
-| `options.resolve`        | One [`Source`](#source) or an array of them — a static `{ tag: Class }` map, a [`lazy`](#lazy-map-options) importer map, or a [`ResolveFn`](#resolvefn). Composed **later-wins** on a tag clash. |
-| `options.onUnresolved`   | Called once per custom-element-looking tag (contains `-`) that no source resolves. See [below](#onunresolved).                                                                                   |
-| `options.serializeState` | Opt into [client state transport](#serializestate). Defaults to `false`.                                                                                                                         |
+| Param                    | Description                                                                                                                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `html`                   | An HTML document or fragment (e.g. a framework's rendered response).                                                                                                                                   |
+| `options.resolve`        | A [`Catalog`](#catalog) (a `{ tag: … }` map of eager classes and/or lazy loaders, auto-detected) or a [resolver function](#resolvefn) — or an array of either, composed **later-wins** on a tag clash. |
+| `options.onUnresolved`   | Called once per custom-element-looking tag (contains `-`) that no source resolves. See [below](#onunresolved).                                                                                         |
+| `options.serializeState` | Opt into [client state transport](#serializestate). Defaults to `false`.                                                                                                                               |
 
 **Returns** a `Promise` of the HTML with every resolved custom element pre-rendered in place.
 
@@ -34,28 +34,30 @@ the ones it couldn't resolve; those are resolved in parallel (each module import
 until nothing new appears. Because it re-renders, it also catches custom elements that appear only inside a
 component's **generated** template, not just in the input.
 
-## `lazy(map, options?)`
+## `glob(map, options?)`
 
-From `@webtides/element-js-ssr-renderer`. Wraps a lazy [`ImporterMap`](#importermap) as a
-[`Source`](#source). Needed because a component class and an importer thunk are both `typeof "function"`, so
-a bare object can't be told apart from a static registry — `lazy()` makes the intent explicit. Each module is
-imported at most once.
+From `@webtides/element-js-ssr-renderer`. An **optional escape hatch** for a loader map that
+[`Catalog`](#catalog) auto-detection can't read: keys that don't map to tags by basename, or modules that
+don't export the component as `default`. Re-keys the map by tag and applies `pick` to each resolved module,
+returning a [resolver function](#resolvefn) (a valid `resolve` value). Each module is imported at most once.
+
+**Rarely needed**: a plain catalog or raw `import.meta.glob()` output goes straight into `resolve` without it.
 
 ```ts
-lazy(
-  map: ImporterMap,
+glob(
+  map: { [key: string]: () => Promise<unknown> },
   options?: {
     pathToTag?: (key: string) => string,
     pick?: (mod: object, tag: string) => CustomElementConstructor,
   },
-): Source
+): ResolveFn
 ```
 
-| Param               | Default                                                       | Description                                                               |
-| ------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `map`               | —                                                             | An [`ImporterMap`](#importermap) — e.g. the output of `import.meta.glob`. |
-| `options.pathToTag` | basename without extension (`./x/el-button.js` → `el-button`) | Derives a tag from each map key. Leaves already-tag keys untouched.       |
-| `options.pick`      | the module's `default` export                                 | Selects the class from a resolved module.                                 |
+| Param               | Default                                                       | Description                                                         |
+| ------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `map`               | —                                                             | A map of `key → () => import(...)` loader thunks.                   |
+| `options.pathToTag` | basename without extension (`./x/el-button.js` → `el-button`) | Derives a tag from each map key. Leaves already-tag keys untouched. |
+| `options.pick`      | the module's `default` export                                 | Selects the class from a resolved module.                           |
 
 ## `elementSSR(options?)`
 
@@ -75,7 +77,7 @@ elementSSR(options?): handle hook (transformPageChunk)
 
 ```ts
 options?: {
-  resolve?: Source | Source[],
+  resolve?: Catalog | ResolveFn | Array<Catalog | ResolveFn>,
   onUnresolved?: (tag: string) => void,
   serializeState?: boolean,
 }
@@ -89,26 +91,24 @@ options?: {
 
 ## Types
 
-### `Registry`
+### `Catalog`
 
 ```ts
-type Registry = { [tag: string]: CustomElementConstructor };
-```
-
-A map of lower-case custom element tag names to their element-js classes, e.g.
-`{ "el-button": Button, "el-input-field": InputField }`.
-
-### `ImporterMap`
-
-```ts
-type ImporterMap = {
-  [key: string]: () => Promise<object> | object | CustomElementConstructor;
+type Catalog = {
+  [tag: string]: CustomElementConstructor | (() => Promise<unknown>);
 };
 ```
 
-A lazily-loaded component map. Each value imports its module (or returns a class) on demand;
-`() => import("<literal>")` is exactly what `import.meta.glob("./components/*.js")` produces. Keys may be
-tags or module paths — see [`lazy`](#lazy-map-options)'s `pathToTag`.
+The one shape `resolve` understands: a `{ tag: … }` map whose values are either an **eager class**
+(`CustomElementConstructor`) or a **lazy loader** (`() => Promise<unknown>` — the exact shape
+`import.meta.glob("./x/*.js")` produces). The renderer auto-detects which each value is, so a hand-written
+catalog **and** raw `import.meta.glob()` output both drop straight into `resolve` with no wrapper:
+
+- **class vs loader** — an eager class extends `HTMLElement` (through the dom-shim), so its
+  `prototype instanceof HTMLElement`; a `() => import()` loader thunk has no such prototype.
+- **tag key vs path key** — a custom-element tag can't contain `/`, but an `import.meta.glob` key always
+  does, so a `/`-bearing key is read as a module path and mapped to a tag by basename
+  (`./components/el-button.js` → `el-button`). A resolved loader module has its `default` picked.
 
 ### `ResolveFn`
 
@@ -121,17 +121,9 @@ type ResolveFn = (
   | undefined;
 ```
 
-Arbitrary tag → class resolution, sync or async — the escape hatch when neither a static map nor an importer
-map fits (a custom convention, a remote lookup, etc.).
-
-### `Source`
-
-```ts
-type Source = Registry | ReturnType<typeof lazy> | ResolveFn;
-```
-
-Anything [`renderToString`](#rendertostring-html-options) can resolve a tag through: a static
-`Registry`, an importer map wrapped in [`lazy`](#lazy-map-options), or a `ResolveFn`.
+Arbitrary tag → class resolution, sync or async — the function form `resolve` accepts (and what
+[`glob`](#glob-map-options) returns), for when a plain `Catalog` doesn't fit: a custom convention, a remote
+lookup, etc.
 
 ### `onUnresolved`
 
@@ -153,24 +145,24 @@ adapters.
 
 ## Subpath exports
 
-| Import                                        | Exports                                                              |
-| --------------------------------------------- | -------------------------------------------------------------------- |
-| `@webtides/element-js-ssr-renderer`           | `renderToString`, `lazy`                                             |
-| `@webtides/element-js-ssr-renderer/dom-shim`  | DOM globals shim (side-effect import)                                |
-| `@webtides/element-js-ssr-renderer/astro`     | `elementSSR` (Astro middleware)                                      |
-| `@webtides/element-js-ssr-renderer/nuxt`      | `elementSSR` (Nitro `render:response` handler)                       |
-| `@webtides/element-js-ssr-renderer/sveltekit` | `elementSSR` (SvelteKit `handle` hook)                               |
-| `@webtides/element-js-ssr-renderer/generate`  | `generateLazyMap`, `entriesFromDirectory`, … (build-time, Node-only) |
+| Import                                        | Exports                                                                  |
+| --------------------------------------------- | ------------------------------------------------------------------------ |
+| `@webtides/element-js-ssr-renderer`           | `renderToString`, `glob`                                                 |
+| `@webtides/element-js-ssr-renderer/dom-shim`  | DOM globals shim (side-effect import)                                    |
+| `@webtides/element-js-ssr-renderer/astro`     | `elementSSR` (Astro middleware)                                          |
+| `@webtides/element-js-ssr-renderer/nuxt`      | `elementSSR` (Nitro `render:response` handler)                           |
+| `@webtides/element-js-ssr-renderer/sveltekit` | `elementSSR` (SvelteKit `handle` hook)                                   |
+| `@webtides/element-js-ssr-renderer/generate`  | `buildCatalog`, `catalogEntriesFromDirectory`, … (build-time, Node-only) |
 
-## `element-ssr` CLI
+## `element-js-ssr-renderer` CLI
 
-A build-time helper that generates a static, bundler-traceable lazy importer map — the no-hand-writing
+A build-time helper that generates a static, bundler-traceable [`Catalog`](#catalog) — the no-hand-writing
 answer for bundled / edge targets (Nuxt/Nitro, webpack, Workers). See
-[Resolving components](/resolving-components#generate-a-static-map-never-hand-write-one).
+[Resolving components](/resolving-components#generate-a-catalog-never-hand-write-one).
 
 ```sh
-element-ssr gen <dir> -o <out.js>                                  # directory convention
-element-ssr gen --manifest <custom-elements.json> [--base <dir>] -o <out.js>  # from a CEM
+element-js-ssr-renderer catalog <dir> -o <catalog.js>                                  # directory convention
+element-js-ssr-renderer catalog --manifest <custom-elements.json> [--base <dir>] -o <catalog.js>  # from a CEM
 ```
 
 | Flag          | Description                                                                      |
@@ -179,5 +171,5 @@ element-ssr gen --manifest <custom-elements.json> [--base <dir>] -o <out.js>  # 
 | `--manifest`  | Read tags from a `custom-elements.json` instead of scanning a directory.         |
 | `--base`      | Package root the manifest's paths resolve against (default: the manifest's dir). |
 
-Emits a module exporting `{ tag: () => import("./tag.js") }`; wrap it in [`lazy`](#lazy-map-options).
-The same logic is available programmatically as `generateLazyMap` from `…/generate`.
+Emits a module default-exporting a `Catalog` of `{ tag: () => import("./tag.js") }` — pass it straight to
+`resolve`, no wrapper. The same logic is available programmatically as `buildCatalog` from `…/generate`.

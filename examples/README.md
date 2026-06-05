@@ -29,7 +29,7 @@ three moves — only the _names_ of the hooks differ:
 2. **Wrap the framework's HTML response.** Take the rendered HTML the framework hands you
    and run it through `await renderToString(html, { resolve })`, then return the transformed
    HTML. Resolution composes component sources — typically element-library via an eager
-   `{ tag: Class }` map plus the project's own components via `lazy(import.meta.glob(...))`
+   `{ tag: Class }` catalog plus the project's own components via `import.meta.glob(...)`
    (see the package README's _Loading & resolving components_).
 3. **Load `define` on the client.** Ship a `<script>` that imports each component's
    `…/define` (or calls a local `define()`), so the pre-rendered elements upgrade and

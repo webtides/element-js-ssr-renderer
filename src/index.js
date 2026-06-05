@@ -1,1 +1,1 @@
-export { renderToString, lazy } from "./render-to-string.js";
+export { renderToString, glob } from "./render-to-string.js";

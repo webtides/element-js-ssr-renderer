@@ -5,12 +5,6 @@ import {
 } from "@webtides/element-js/src/util/AttributeParser";
 import { Store } from "@webtides/element-js/src/util/Store";
 
-/**
- * @typedef {Object<string, CustomElementConstructor>} Registry
- * A map of lower-case custom element tag names to their @webtides/element-js classes,
- * e.g. `{ 'el-button': Button, 'el-input-field': InputField }`.
- */
-
 const PARSE_OPTIONS = { comment: true };
 
 /** Document-level stylesheets a shadow component may adopt as "global" styles. */
@@ -221,12 +215,13 @@ function isEmptyTemplate(markup) {
 
 /**
  * @typedef {Object} TransformContext
- * @property {Registry} registry
+ * @property {Object<string, CustomElementConstructor>} resolved - tags resolved to their classes so
+ *   far; the map this transform pass renders against (grows across the resolution fixpoint).
  * @property {{ node: import('node-html-parser').HTMLElement, html: string }[]} globalStyles
  * @property {Set<string>} lightStyleIds - ids of light-DOM `<style>`s already emitted, document-wide
  * @property {(tag: string) => void} [onUnresolved] - called with each custom-element-looking tag
- *   (contains `-`) that isn't in `registry`. The async resolver uses this to discover which tags to
- *   load; it also backs the dev-mode "unregistered tag" warning (T-008.6).
+ *   (contains `-`) not yet in `resolved`. The async resolver uses this to discover which tags to
+ *   load; it also backs the dev-mode "unresolved tag" warning (T-008.6).
  * @property {boolean} [serializeState] - when true, stamp each rendered component with a deterministic
  *   `ejs:key` and collect its state into `stateMap` for client hydration (T-007).
  * @property {Object<string, object>} stateMap - merged state, keyed by `ejs:key` (and store keys),
@@ -246,7 +241,7 @@ function transformNode(node, ctx) {
     if (child.nodeType !== NodeType.ELEMENT_NODE) continue;
 
     const tag = child.rawTagName?.toLowerCase();
-    const Constructor = tag ? ctx.registry[tag] : undefined;
+    const Constructor = tag ? ctx.resolved[tag] : undefined;
 
     if (Constructor) {
       const {
@@ -377,23 +372,23 @@ function defaultUnresolvedWarning() {
 }
 
 /**
- * Parse `html`, pre-render every custom element found in `registry`, and stringify. Shared by the
- * sync and async entry points; pure over (`html`, `registry`), so the async path can call it
- * repeatedly with a growing registry (see {@link renderToString}'s resolution fixpoint).
+ * Parse `html`, pre-render every custom element found in `resolved`, and stringify. Pure over
+ * (`html`, `resolved`), so the resolution fixpoint can call it repeatedly with a growing map of
+ * resolved tags (see {@link renderToString}).
  * @param {string} html
- * @param {Registry} registry
+ * @param {Object<string, CustomElementConstructor>} resolved - tags already resolved to their classes
  * @param {(tag: string) => void} [onUnresolved]
  * @param {boolean} [serializeState] - opt into client state transport (T-007)
  * @return {string}
  */
-function runTransform(html, registry, onUnresolved, serializeState) {
+function runTransform(html, resolved, onUnresolved, serializeState) {
   const root = parse(html, PARSE_OPTIONS);
   // Collect global styles up front, before any generated shadow templates are spliced in, so we
   // only ever adopt the input document's own stylesheets.
   const globalStyles = collectGlobalStyles(root);
   const stateMap = {};
   transformNode(root, {
-    registry,
+    resolved,
     globalStyles,
     lightStyleIds: new Set(),
     onUnresolved,
@@ -409,23 +404,19 @@ function runTransform(html, registry, onUnresolved, serializeState) {
 }
 
 /**
- * A lazily-loaded component map. Each value imports its module (or returns a class) on demand;
- * `() => import('<literal>')` is plain ESM that a bundler can code-split and bare Node ESM can run,
- * and is exactly what Vite's `import.meta.glob('./components/*.js')` produces. Keys may be tags or
- * module paths — see `pathToTag` on {@link lazy}.
- * @typedef {Object<string, () => (Promise<object> | object | CustomElementConstructor)>} ImporterMap
- *
- * Arbitrary tag→class resolution, sync or async — the escape hatch when neither a static map nor an
- * importer map fits (a custom convention, a remote lookup, etc.).
- * @typedef {(tag: string) => (CustomElementConstructor | Promise<CustomElementConstructor | undefined> | undefined)} ResolveFn
- *
- * Anything {@link renderToString} can resolve a tag through: a static {@link Registry}, an
- * importer map wrapped in {@link lazy}, or a {@link ResolveFn}.
- * @typedef {Registry | ReturnType<typeof lazy> | ResolveFn} Source
+ * A **`Catalog`** maps custom-element tags to components — the one shape `resolve` understands. Each
+ * value is either an **eager class** (a `CustomElementConstructor`) or a **lazy loader**
+ * (`() => Promise<unknown>`, the exact shape Vite's `import.meta.glob('./x/*.js')` produces — plain
+ * ESM that a bundler code-splits and bare Node runs). The renderer auto-detects which each entry is,
+ * so a hand-written catalog **and** raw `import.meta.glob()` output both drop straight into `resolve`
+ * with no wrapper:
+ *   - **class vs loader** — an eager class extends `HTMLElement` (through the dom-shim), so its
+ *     `prototype instanceof HTMLElement`; a `() => import()` loader thunk has no such prototype.
+ *   - **tag key vs path key** — a custom-element tag can't contain `/`, but an `import.meta.glob` key
+ *     always does, so a `/`-bearing key is read as a module path and mapped to a tag by basename
+ *     (`./components/el-button.js` → `el-button`). A resolved loader module has its `default` picked.
+ * @typedef {Object<string, CustomElementConstructor | (() => Promise<unknown>)>} Catalog
  */
-
-/** Brands the object returned by {@link lazy} so {@link toResolver} can tell it from a Registry. */
-const LAZY_SOURCE = Symbol("element-js-ssr-renderer/lazy");
 
 /** Default key→tag mapping: a path's basename without extension (`./x/el-button.js` → `el-button`). */
 function defaultPathToTag(key) {
@@ -439,18 +430,59 @@ function defaultPick(mod) {
 }
 
 /**
- * Wrap a lazy {@link ImporterMap} as a {@link Source}. Needed because a component class and an
- * importer thunk are both `typeof 'function'`, so a bare object can't be told apart from a static
- * registry — `lazy()` makes the intent explicit. Each module is imported at most once.
- *
- * @param {ImporterMap} map
- * @param {{ pathToTag?: (key: string) => string, pick?: (mod: object, tag: string) => CustomElementConstructor }} [options]
- *   `pathToTag` derives a tag from each map key (default: basename without extension, which leaves
- *   already-tag keys untouched). `pick` selects the class from a resolved module (default: its
- *   `default` export).
- * @return {{ [LAZY_SOURCE]: true, resolve: ResolveFn }}
+ * Whether a {@link Catalog} value is an **eager component class** (vs a lazy `() => import()` loader).
+ * An element-js class extends `HTMLElement` (through the dom-shim), so it carries a
+ * `prototype instanceof HTMLElement`; an arrow loader thunk has no such prototype. Guarded so it
+ * stays `false` (rather than throwing) if the dom-shim hasn't installed `HTMLElement` yet.
+ * @param {*} value
+ * @return {boolean}
  */
-export function lazy(
+function isElementClass(value) {
+  return (
+    typeof value === "function" &&
+    typeof globalThis.HTMLElement === "function" &&
+    value.prototype instanceof globalThis.HTMLElement
+  );
+}
+
+/**
+ * Normalize one {@link Catalog} into a uniform `(tag) => class | Promise<class> | undefined` resolver,
+ * auto-detecting each entry: class keys resolve to the class directly; loader keys import on demand
+ * (each module at most once) and pick the module's `default`. Path keys (containing `/`) map to a tag
+ * by basename. See {@link Catalog} for the detection rules.
+ * @param {Catalog} catalog
+ * @return {(tag: string) => CustomElementConstructor | Promise<CustomElementConstructor | undefined> | undefined}
+ */
+function catalogToResolver(catalog) {
+  const entries = new Map(); // tag -> class | loader thunk
+  for (const [key, value] of Object.entries(catalog))
+    entries.set(key.includes("/") ? defaultPathToTag(key) : key, value);
+
+  const cache = new Map(); // tag -> Promise<class>, so each lazy module imports once
+  return (tag) => {
+    const value = entries.get(tag);
+    if (value === undefined) return undefined;
+    if (isElementClass(value)) return value;
+    if (!cache.has(tag))
+      cache.set(tag, Promise.resolve(value()).then(defaultPick));
+    return cache.get(tag);
+  };
+}
+
+/**
+ * Escape hatch for the rare loader {@link Catalog} that auto-detection can't read: keys that don't map
+ * to tags by basename, or modules that don't export the component as `default`. Re-keys the map by tag
+ * and applies `pick` to each resolved module, returning a resolver function — itself a valid `resolve`
+ * value. **Rarely needed**: a plain catalog or raw `import.meta.glob()` output goes straight into
+ * `resolve` without it.
+ *
+ * @param {Object<string, () => Promise<unknown>>} map
+ * @param {{ pathToTag?: (key: string) => string, pick?: (mod: object, tag: string) => CustomElementConstructor }} [options]
+ *   `pathToTag` derives a tag from each map key (default: basename without extension). `pick` selects
+ *   the class from a resolved module (default: its `default` export).
+ * @return {(tag: string) => Promise<CustomElementConstructor> | undefined}
+ */
+export function glob(
   map,
   { pathToTag = defaultPathToTag, pick = defaultPick } = {},
 ) {
@@ -459,7 +491,7 @@ export function lazy(
     importers.set(pathToTag(key), importer);
 
   const cache = new Map(); // tag -> Promise<class>, so each module imports once
-  const resolve = (tag) => {
+  return (tag) => {
     const importer = importers.get(tag);
     if (!importer) return undefined;
     if (!cache.has(tag))
@@ -469,24 +501,23 @@ export function lazy(
       );
     return cache.get(tag);
   };
-  return { [LAZY_SOURCE]: true, resolve };
 }
 
 /**
- * Normalize a {@link Source} into a uniform `(tag) => class | Promise | undefined` resolver.
- * @param {Source} source
- * @return {ResolveFn}
+ * Normalize one `resolve` source — a {@link Catalog} or a bare `(tag) => …` resolver function (what
+ * {@link glob} returns, or any custom lookup) — into a uniform resolver.
+ * @param {Catalog | ((tag: string) => *)} source
+ * @return {(tag: string) => CustomElementConstructor | Promise<CustomElementConstructor | undefined> | undefined}
  */
 function toResolver(source) {
-  if (typeof source === "function") return source; // ResolveFn
-  if (source?.[LAZY_SOURCE]) return source.resolve; // lazy()
-  return (tag) => source[tag]; // Registry
+  if (typeof source === "function") return source; // resolver fn (incl. glob() output)
+  return catalogToResolver(source); // a Catalog
 }
 
 /**
  * Compose sources into one resolver. Later sources win (`{...a, ...b}` semantics), so a project's
  * own source listed after `@webtides/element-library` overrides it on a tag clash.
- * @param {Source[]} sources
+ * @param {Array<Catalog | ((tag: string) => *)>} sources
  * @return {(tag: string) => Promise<CustomElementConstructor | undefined>}
  */
 function composeSources(sources) {
@@ -502,7 +533,7 @@ function composeSources(sources) {
 
 /**
  * Pre-render every custom element found in an HTML string, resolving each tag through the
- * {@link Source}(s) you pass as `resolve`.
+ * {@link Catalog}(s) you pass as `resolve`.
  *
  * Shadow-DOM components are emitted as Declarative Shadow DOM (`<template shadowrootmode="open">`)
  * with the global styles they adopt (per element-js' `adoptGlobalStyles` option) plus their own
@@ -527,15 +558,15 @@ function composeSources(sources) {
  *
  * @param {string} html - an HTML document or fragment (e.g. a framework's rendered response)
  * @param {{
- *   resolve?: Source | Source[],
+ *   resolve?: Catalog | ((tag: string) => *) | Array<Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
  *   serializeState?: boolean,
  * }} [options]
- *   `resolve` is one {@link Source} or an array of them — a static `{ tag: Class }` registry, a
- *   {@link lazy} importer map, or a {@link ResolveFn} — composed later-wins on a tag clash.
- *   `onUnresolved` is called once per custom-element tag that no source could resolve; it defaults to
- *   a dev-only warning (pass `() => {}` to silence). `serializeState` (default `false`) opts into
- *   client state transport.
+ *   `resolve` is a {@link Catalog} (a `{ tag: Class }` / `import.meta.glob()` map, eager classes and
+ *   lazy loaders auto-detected) or a `(tag) => …` resolver function — or an array of either, composed
+ *   later-wins on a tag clash. `onUnresolved` is called once per custom-element tag that no source
+ *   could resolve; it defaults to a dev-only warning (pass `() => {}` to silence). `serializeState`
+ *   (default `false`) opts into client state transport.
  * @return {Promise<string>} the HTML with custom elements pre-rendered
  */
 export async function renderToString(
@@ -548,7 +579,7 @@ export async function renderToString(
   const resolver = composeSources(sources);
   const warn = onUnresolved ?? defaultUnresolvedWarning();
 
-  const resolved = {}; // tag -> class; the registry handed to each transform pass, growing each time
+  const resolved = {}; // tag -> class; the map handed to each transform pass, growing each time
   const attempted = new Set(); // tags we've already tried, so genuine misses don't loop forever
 
   // eslint-disable-next-line no-constant-condition

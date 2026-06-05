@@ -1,7 +1,6 @@
 import "../src/dom-shim.js"; // must precede any component import
 import { describe, it, expect, vi } from "vitest";
 import { elementSSR } from "../src/adapters/sveltekit.js";
-import { lazy } from "../src/index.js";
 
 import Button from "@webtides/element-library/button";
 
@@ -22,7 +21,7 @@ const resolveWithChunks =
   };
 
 describe("elementSSR (sveltekit handle)", () => {
-  it("pre-renders components from a static registry", async () => {
+  it("pre-renders components from a static catalog", async () => {
     const handle = elementSSR({ resolve: { "el-button": Button } });
     const out = await handle({
       event: {},
@@ -33,7 +32,7 @@ describe("elementSSR (sveltekit handle)", () => {
 
   it("pre-renders components resolved lazily, loading only what's present", async () => {
     const importer = vi.fn(() => Promise.resolve({ default: Button }));
-    const handle = elementSSR({ resolve: lazy({ "el-button": importer }) });
+    const handle = elementSSR({ resolve: { "el-button": importer } });
 
     const out = await handle({
       event: {},

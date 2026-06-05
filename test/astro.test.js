@@ -1,7 +1,6 @@
 import "../src/dom-shim.js"; // must precede any component import
 import { describe, it, expect, vi } from "vitest";
 import { elementSSR } from "../src/adapters/astro.js";
-import { lazy } from "../src/index.js";
 
 import Button from "@webtides/element-library/button";
 
@@ -12,7 +11,7 @@ const htmlNext = (body) => () =>
   );
 
 describe("elementSSR (astro middleware)", () => {
-  it("pre-renders components from a static registry", async () => {
+  it("pre-renders components from a static catalog", async () => {
     const onRequest = elementSSR({ resolve: { "el-button": Button } });
     const res = await onRequest({}, htmlNext("<el-button>Save</el-button>"));
     expect(await res.text()).toContain('<template shadowrootmode="open">');
@@ -20,7 +19,7 @@ describe("elementSSR (astro middleware)", () => {
 
   it("pre-renders components resolved lazily, loading only what's present", async () => {
     const importer = vi.fn(() => Promise.resolve({ default: Button }));
-    const onRequest = elementSSR({ resolve: lazy({ "el-button": importer }) });
+    const onRequest = elementSSR({ resolve: { "el-button": importer } });
 
     const res = await onRequest({}, htmlNext("<el-button>Save</el-button>"));
     expect(await res.text()).toContain("shadowrootmode");

@@ -1,7 +1,6 @@
 import "../src/dom-shim.js"; // must precede any component import
 import { describe, it, expect, vi } from "vitest";
 import { elementSSR } from "../src/adapters/nuxt.js";
-import { lazy } from "../src/index.js";
 
 import Button from "@webtides/element-library/button";
 
@@ -13,7 +12,7 @@ const htmlResponse = (body, headers = { "content-type": "text/html" }) => ({
 });
 
 describe("elementSSR (nuxt render:response hook)", () => {
-  it("pre-renders components from a static registry, mutating response.body in place", async () => {
+  it("pre-renders components from a static catalog, mutating response.body in place", async () => {
     const onResponse = elementSSR({ resolve: { "el-button": Button } });
     const response = htmlResponse("<el-button>Save</el-button>");
 
@@ -23,7 +22,7 @@ describe("elementSSR (nuxt render:response hook)", () => {
 
   it("pre-renders components resolved lazily, loading only what's present", async () => {
     const importer = vi.fn(() => Promise.resolve({ default: Button }));
-    const onResponse = elementSSR({ resolve: lazy({ "el-button": importer }) });
+    const onResponse = elementSSR({ resolve: { "el-button": importer } });
     const response = htmlResponse("<el-button>Save</el-button>");
 
     await onResponse(response);

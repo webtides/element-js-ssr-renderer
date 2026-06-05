@@ -12,7 +12,7 @@ import { renderToString } from "../render-to-string.js";
  *
  * @param {Response} response - the framework's rendered response
  * @param {{
- *   resolve?: import('../render-to-string.js').Source | import('../render-to-string.js').Source[],
+ *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
  *   serializeState?: boolean,
  * }} [options] - forwarded to {@link renderToString}

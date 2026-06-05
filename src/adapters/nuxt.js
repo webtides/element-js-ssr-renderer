@@ -9,15 +9,15 @@ import { transformHtmlResponse } from "./transform-response.js";
  * // server/plugins/element-ssr.js
  * import '@webtides/element-js-ssr-renderer/dom-shim';        // must come first: installs HTMLElement etc.
  * import { elementSSR } from '@webtides/element-js-ssr-renderer/nuxt';
- * import { lazy } from '@webtides/element-js-ssr-renderer';
  * import Button from '@webtides/element-library/button';
  *
  * export default defineNitroPlugin((nitroApp) => {
  *     nitroApp.hooks.hook('render:response', elementSSR({
  *         resolve: [
  *             { 'el-button': Button },                              // eager element-library components
- *             // Nitro is not Vite, so `import.meta.glob` is unavailable — hand-write the importer map:
- *             lazy({ 'x-counter': () => import('../../elements/x-counter.js') }),
+ *             // Nitro is not Vite, so `import.meta.glob` is unavailable — a hand-written (or
+ *             // generated) lazy Catalog goes straight into `resolve`, no wrapper:
+ *             { 'x-counter': () => import('../../elements/x-counter.js') },
  *         ],
  *     }));
  * });
@@ -37,7 +37,7 @@ import { transformHtmlResponse } from "./transform-response.js";
  * defaults; enable element-js' matching `serializeState` config on the client too.
  *
  * @param {{
- *   resolve?: import('../render-to-string.js').Source | import('../render-to-string.js').Source[],
+ *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
  *   serializeState?: boolean,
  * }} [options]

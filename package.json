@@ -14,10 +14,10 @@
     "./astro": "./src/adapters/astro.js",
     "./nuxt": "./src/adapters/nuxt.js",
     "./sveltekit": "./src/adapters/sveltekit.js",
-    "./generate": "./src/generate-lazy-map.js"
+    "./generate": "./src/generate-catalog.js"
   },
   "bin": {
-    "element-ssr": "./bin/element-ssr.js"
+    "element-js-ssr-renderer": "./bin/element-js-ssr-renderer.js"
   },
   "files": [
     "src",

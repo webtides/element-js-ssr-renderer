@@ -30,7 +30,7 @@ features:
       elements update in place instead of rendering from scratch.
   - title: Load only what's on the page
     details: >-
-      Resolve components eagerly from a static registry or lazily from one or
+      Resolve components eagerly from a static catalog or lazily from one or
       more sources, so unused components never load — the cold-start / edge win.
   - title: Framework-agnostic core
     details: >-

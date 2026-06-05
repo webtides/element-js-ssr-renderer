@@ -3,7 +3,7 @@
 Server-side rendering for [`@webtides/element-js`](https://github.com/webtides/element-js) custom elements.
 
 Give it an HTML string (typically the rendered output of Astro / SvelteKit / Nuxt) and it recursively
-pre-renders every custom element it can resolve **in place** — eagerly from a static registry, or
+pre-renders every custom element it can resolve **in place** — eagerly from a static catalog, or
 lazily so only the components actually on the page ever load (see
 [Resolving components](/resolving-components)):
 

@@ -21,6 +21,16 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-05 — Resolution-surface redesign shipped: one `Catalog` type, no wrapper (T-018)
+
+**Tasks:** T-018, T-018.1, T-018.2, T-018.3, T-018.4, T-018.5
+
+- **Collapsed the resolution vocabulary to a single named type, `Catalog`** = `Record<string, CustomElementConstructor | (() => Promise<unknown>)>`. Retired `Source` / `ImporterMap` / `ResolveFn` (the type) / `Registry` from the JSDoc surface; the eager value is the platform's `CustomElementConstructor`, the lazy value is Vite's exact `() => Promise<unknown>` thunk, and the `(tag) => …` resolver-function form stays accepted by `resolve` but is described inline, not named. (T-018.1)
+- **Auto-detecting normalization (`catalogToResolver` + `isElementClass`)** — the renderer now inspects each `Catalog` entry instead of demanding a wrapper: **class vs loader** via `value.prototype instanceof HTMLElement` (eager class extends HTMLElement through the dom-shim; a `() => import()` loader has no such prototype, guarded so it stays `false` if the shim isn't installed), **tag-key vs path-key** via `/` presence (path keys → tag by basename; loader modules get `.default` picked). Net: a hand-written `Catalog` **and** raw `import.meta.glob("./x/*.js")` both drop straight into `resolve`. (T-018.2)
+- **Deleted `lazy()`** (no alias; pre-release) and replaced it with `glob(map, { pathToTag, pick })` — a thin **optional** escape hatch for only what auto-detection can't infer (filename ≠ tag, non-`default` export). It returns a resolver function, itself a valid `resolve` value. `index.js` now exports `{ renderToString, glob }`. (T-018.3)
+- **Renamed the CLI + generator to match the package.** Bin `element-ssr` → `element-js-ssr-renderer` with a `catalog` subcommand (was `gen`), emitting `catalog.js`. `src/generate-lazy-map.js` → `src/generate-catalog.js`; `generateLazyMap` → `buildCatalog`, `entriesFrom{Directory,Manifest}` → `catalogEntriesFrom{Directory,Manifest}`, `renderLazyMapModule` → `renderCatalogModule`. The generated module is now a `Catalog` consumed with no wrapper; `package.json` `bin`/`exports` updated (`./generate` → `generate-catalog.js`). (T-018.4)
+- **Propagated everywhere:** all three adapters' JSDoc, the astro/nuxt/sveltekit examples (dropped every `lazy()`; Nuxt regen'd `server/components.generated.js` → `server/catalog.js`, `gen:components` → `gen:catalog`), the test suite (`test/generate-lazy-map.test.js` → `test/generate-catalog.test.js`; added an "auto-detects eager + lazy in one catalog" test), and all docs (resolving-components rewritten around the single type, API reference, framework pages, installation, README, example READMEs). Breaking; pre-release (0.0.1). Suite green at 52; docs build clean. **Unblocks T-003.2** (element-library can now ship `./catalog`). (T-018.5)
+
 ## 2026-06-05 — Follow-up: resolution-surface redesign supersedes the naming tweak (T-018)
 
 **Tasks:** T-018, T-003.2, T-003.3

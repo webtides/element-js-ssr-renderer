@@ -1,16 +1,16 @@
-import "../src/dom-shim.js"; // before any component import (incl. the generated map's targets)
+import "../src/dom-shim.js"; // before any component import (incl. the generated catalog's targets)
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { renderToString, lazy } from "../src/index.js";
+import { renderToString } from "../src/index.js";
 import {
-  entriesFromDirectory,
-  entriesFromManifest,
-  renderLazyMapModule,
-  generateLazyMap,
-} from "../src/generate-lazy-map.js";
+  catalogEntriesFromDirectory,
+  catalogEntriesFromManifest,
+  renderCatalogModule,
+  buildCatalog,
+} from "../src/generate-catalog.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(here, "fixtures/components");
@@ -27,32 +27,36 @@ const fixtureManifest = {
   ],
 };
 
-describe("entriesFromDirectory", () => {
+describe("catalogEntriesFromDirectory", () => {
   it("discovers hyphenated *.js by basename and skips the rest", () => {
-    const entries = entriesFromDirectory(fixturesDir);
+    const entries = catalogEntriesFromDirectory(fixturesDir);
     expect(entries).toEqual([
       { tag: "el-fixture", file: path.join(fixturesDir, "el-fixture.js") },
     ]);
   });
 });
 
-describe("entriesFromManifest", () => {
+describe("catalogEntriesFromManifest", () => {
   it("maps each customElement tag to its resolved module file", () => {
-    const entries = entriesFromManifest(fixtureManifest, { base: fixturesDir });
+    const entries = catalogEntriesFromManifest(fixtureManifest, {
+      base: fixturesDir,
+    });
     expect(entries).toEqual([
       { tag: "el-fixture", file: path.join(fixturesDir, "el-fixture.js") },
     ]);
   });
 
   it("requires a base", () => {
-    expect(() => entriesFromManifest(fixtureManifest, {})).toThrow(/base/);
+    expect(() => catalogEntriesFromManifest(fixtureManifest, {})).toThrow(
+      /base/,
+    );
   });
 });
 
-describe("renderLazyMapModule", () => {
-  it("emits sorted lazy thunks with specifiers relative to the output file", () => {
-    const outFile = path.join(fixturesDir, "sub/map.generated.js");
-    const code = renderLazyMapModule(
+describe("renderCatalogModule", () => {
+  it("emits sorted loader thunks with specifiers relative to the output file", () => {
+    const outFile = path.join(fixturesDir, "sub/catalog.js");
+    const code = renderCatalogModule(
       [
         { tag: "x-two", file: path.join(fixturesDir, "x-two.js") },
         { tag: "x-one", file: path.join(fixturesDir, "x-one.js") },
@@ -68,18 +72,18 @@ describe("renderLazyMapModule", () => {
 
   it("throws on a duplicate tag", () => {
     expect(() =>
-      renderLazyMapModule(
+      renderCatalogModule(
         [
           { tag: "x-dup", file: "/a/x-dup.js" },
           { tag: "x-dup", file: "/b/x-dup.js" },
         ],
-        { outFile: "/out/map.js" },
+        { outFile: "/out/catalog.js" },
       ),
     ).toThrow(/duplicate tag/);
   });
 });
 
-describe("generateLazyMap (end-to-end)", () => {
+describe("buildCatalog (end-to-end)", () => {
   let tmp;
   beforeAll(() => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "ssrgen-"));
@@ -89,35 +93,35 @@ describe("generateLazyMap (end-to-end)", () => {
   });
 
   it("requires exactly one of dir/manifest", () => {
-    expect(() => generateLazyMap({ out: "x.js" })).toThrow(/exactly one/);
+    expect(() => buildCatalog({ out: "x.js" })).toThrow(/exactly one/);
     expect(() =>
-      generateLazyMap({ dir: fixturesDir, manifest: {}, out: "x.js" }),
+      buildCatalog({ dir: fixturesDir, manifest: {}, out: "x.js" }),
     ).toThrow(/exactly one/);
   });
 
-  it("generates a directory map whose thunks render through lazy()", async () => {
-    const out = path.join(tmp, "dir/components.generated.js");
-    const { entries } = generateLazyMap({ dir: fixturesDir, out });
+  it("generates a directory catalog that drops straight into resolve", async () => {
+    const out = path.join(tmp, "dir/catalog.js");
+    const { entries } = buildCatalog({ dir: fixturesDir, out });
     expect(entries.map((e) => e.tag)).toEqual(["el-fixture"]);
 
-    const { default: map } = await import(pathToFileURL(out).href);
+    const { default: catalog } = await import(pathToFileURL(out).href);
     const html = await renderToString("<el-fixture></el-fixture>", {
-      resolve: lazy(map),
+      resolve: catalog, // no wrapper — the loader thunks are auto-detected
     });
     expect(html).toContain('<template shadowrootmode="open">');
     expect(html).toContain("fixture");
   });
 
-  it("generates a manifest map that resolves the same way", async () => {
-    const out = path.join(tmp, "manifest/components.generated.js");
-    generateLazyMap({
+  it("generates a manifest catalog that resolves the same way", async () => {
+    const out = path.join(tmp, "manifest/catalog.js");
+    buildCatalog({
       manifest: fixtureManifest,
       base: fixturesDir,
       out,
     });
-    const { default: map } = await import(pathToFileURL(out).href);
+    const { default: catalog } = await import(pathToFileURL(out).href);
     const html = await renderToString("<el-fixture></el-fixture>", {
-      resolve: lazy(map),
+      resolve: catalog,
     });
     expect(html).toContain("fixture");
   });

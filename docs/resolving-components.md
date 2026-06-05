@@ -1,81 +1,65 @@
 # Resolving components
 
 The renderer's one real choice is how you turn a tag like `<el-button>` into its element-js class. That
-choice decides whether unused components load at all. You supply one or more **sources** through a single
-option — `resolve` — and there are three kinds of source plus one rule for combining them.
+choice decides whether unused components load at all. You supply it through a single option — `resolve` —
+and there is just **one shape to learn**: a `Catalog`.
 
 `renderToString` is **async**: resolution can import modules on demand, so always `await` it.
 
-## Three kinds of source
+## The `Catalog`
 
-### 1. Static map
-
-A `{ tag: Class }` map (the [`Registry`](/api/#registry) type). Everything is imported and listed up front:
-zero tooling, works in every runtime. This is the floor, and what the [quick start](/guide/quick-start) uses:
+A [`Catalog`](/api/#catalog) is a `{ tag: … }` map whose values are either an **eager class** or a **lazy
+loader** (`() => import(...)`). You can mix both in one map — the renderer auto-detects which each value is,
+so there is no wrapper to remember.
 
 ```js
-await renderToString("<el-button>Save</el-button>", {
-  resolve: { "el-button": Button },
+import { renderToString } from "@webtides/element-js-ssr-renderer";
+import Button from "@webtides/element-library/button";
+
+await renderToString("<el-button>Save</el-button><x-counter></x-counter>", {
+  resolve: {
+    "el-button": Button, // eager: imported up front, always available
+    "x-counter": () => import("./components/x-counter.js"), // lazy: imported only if present
+  },
 });
 ```
 
-### 2. Lazy importer map
+How the auto-detection works (you rarely need to think about it):
 
-`{ tag: () => import(...) }`, wrapped in `lazy()`. Each component imports **on demand**, so only the
-components actually on the page are ever loaded. `() => import("<literal>")` is plain ESM that bundlers
-code-split and bare Node runs — and it's exactly what Vite's `import.meta.glob` produces:
+- **class vs loader** — an eager class extends `HTMLElement` (through the dom-shim), so it carries a
+  `prototype instanceof HTMLElement`; a `() => import()` loader thunk does not.
+- **tag key vs path key** — a custom-element tag can't contain `/`, but an `import.meta.glob` key always
+  does, so a `/`-bearing key is read as a module path and mapped to a tag by its basename
+  (`./components/el-button.js` → `el-button`). A resolved loader module has its `default` export picked.
 
-```js
-import { renderToString, lazy } from "@webtides/element-js-ssr-renderer";
+A **fully eager** catalog (every value a class) is the floor: zero tooling, works in every runtime, and is
+what the [quick start](/guide/quick-start) uses. A **lazy** catalog imports each component only when its tag
+is actually on the page — the cold-start / serverless / edge win.
 
-const components = import.meta.glob("./components/*.js");
-// Vite expands this to { "./components/el-button.js": () => import("./components/el-button.js"), … }
+### `import.meta.glob` is already a Catalog
 
-await renderToString("<el-button>Save</el-button>", {
-  resolve: lazy(components),
-});
-```
-
-Keys may be tags **or** module paths: `lazy` derives the tag from a path's basename by default
-(`./components/el-button.js` → `el-button`) and picks the class from the module's `default` export. Override
-either when your layout or exports differ:
-
-```js
-lazy(components, {
-  pathToTag: (path) => path.match(/([^/]+)\.js$/)[1],
-  pick: (mod, tag) => mod.SomeNamedExport,
-});
-```
-
-::: info Why `lazy()` is required
-A component class and an importer thunk are both `typeof "function"` — wrapping makes the intent unambiguous
-against a static map.
-:::
-
-### 3. Resolver function
-
-`(tag) => Class | Promise<Class> | undefined`, the escape hatch for any custom logic (a remote lookup, a
-naming scheme, …). A bare function passed to `resolve` is treated as one:
+Vite's `import.meta.glob('./components/*.js')` returns `{ "./components/x.js": () => import(...) }` — a lazy
+`Catalog` as-is. Drop it straight into `resolve`, no wrapper:
 
 ```js
 await renderToString(html, {
-  resolve: (tag) => (tag === "el-button" ? Button : undefined),
+  resolve: import.meta.glob("./components/*.js"),
 });
 ```
 
 ## Multiple sources
 
-`resolve` also accepts an **array** of sources, so library and project components compose. **Later sources
-win** (like `{ ...a, ...b }`), so your own components can override a library's on a tag clash:
+`resolve` also accepts an **array**, so library and project components compose. **Later sources win** (like
+`{ ...a, ...b }`), so your own components can override a library's on a tag clash:
 
 ```js
-import { renderToString, lazy } from "@webtides/element-js-ssr-renderer";
+import { renderToString } from "@webtides/element-js-ssr-renderer";
 import Button from "@webtides/element-library/button";
 
 await renderToString(html, {
   resolve: [
     { "el-button": Button }, // eager base components
-    lazy(import.meta.glob("./components/*.js")), // this project's — overrides the above
+    import.meta.glob("./components/*.js"), // this project's — overrides the above
   ],
 });
 ```
@@ -83,44 +67,77 @@ await renderToString(html, {
 Only the tags actually present on the page are resolved, so a 200-component library costs **nothing** on a
 page that uses three of them.
 
-## Generate a static map — never hand-write one
+## Resolver function (escape hatch)
 
-`lazy(import.meta.glob(...))` is perfect when a bundler is in play (Vite — Astro, SvelteKit). But once a
-bundler seals your server into one graph (Nuxt/Nitro, webpack, the edge), every `import()` must be a literal
-the bundler can trace, and you have no folder to glob at runtime. Rather than hand-write that map, **generate
-it** with the bundled CLI:
+For arbitrary logic — a remote lookup, a naming scheme, a fallback — pass a function
+`(tag) => Class | Promise<Class> | undefined` instead of (or in the array alongside) a catalog:
+
+```js
+await renderToString(html, {
+  resolve: (tag) => (tag === "el-button" ? Button : undefined),
+});
+```
+
+### `glob()` — for loader maps auto-detection can't read
+
+The rare loader map whose keys don't map to tags by basename, or whose modules don't export the component as
+`default`, can be adapted with `glob(map, { pathToTag, pick })`. It returns a resolver function, so it slots
+into `resolve` like any other source. **You usually don't need it** — a plain catalog or raw
+`import.meta.glob()` output works without it.
+
+```js
+import { renderToString, glob } from "@webtides/element-js-ssr-renderer";
+
+await renderToString(html, {
+  resolve: glob(
+    { "buttons/Btn.entry": () => import("./buttons/Btn.entry.js") },
+    {
+      pathToTag: (path) => path.match(/([^/]+)\.entry$/)[1], // → "Btn"… map however you like
+      pick: (mod) => mod.SomeNamedExport, // non-default export
+    },
+  ),
+});
+```
+
+## Generate a catalog — never hand-write one
+
+A lazy catalog is perfect when a bundler is in play (Vite — Astro, SvelteKit — gives you `import.meta.glob`).
+But once a bundler seals your server into one graph (Nuxt/Nitro, webpack, the edge), every `import()` must be
+a literal the bundler can trace, and you have no folder to glob at runtime. Rather than hand-write that map,
+**generate it** with the bundled CLI:
 
 ```sh
 # directory convention (x-counter.js → x-counter)
-element-ssr gen ./components -o ./components.generated.js
+element-js-ssr-renderer catalog ./components -o ./catalog.js
 
 # or from a custom-elements.json (handles nested layouts, e.g. element-library)
-element-ssr gen --manifest node_modules/@webtides/element-library/custom-elements.json \
-  -o ./library.generated.js
+element-js-ssr-renderer catalog --manifest node_modules/@webtides/element-library/custom-elements.json \
+  -o ./library.catalog.js
 ```
 
-It emits a static, bundler-traceable module of `() => import("./x-counter.js")` thunks — wrap it in `lazy()`:
+It emits a static, bundler-traceable `Catalog` of `() => import("./x-counter.js")` thunks — import it and
+pass it straight to `resolve`, no wrapper:
 
 ```js
-import map from "./components.generated.js"; // generated, do not edit
-elementSSR({ resolve: lazy(map) });
+import catalog from "./catalog.js"; // generated, do not edit
+elementSSR({ resolve: catalog });
 ```
 
-Wire it into your build (`"prebuild": "element-ssr gen ./components -o ./components.generated.js"`) so it
-stays in sync. The same engine is available programmatically as `generateLazyMap` from
+Wire it into your build (`"prebuild": "element-js-ssr-renderer catalog ./components -o ./catalog.js"`) so it
+stays in sync. The same engine is available programmatically as `buildCatalog` from
 `@webtides/element-js-ssr-renderer/generate` if you'd rather drive it from a Vite/rollup plugin. The Nuxt
 example uses exactly this — see [its plugin](https://github.com/webtides/element-js-ssr-renderer/tree/main/examples/nuxt).
 
-## Which source for which environment
+## Which catalog for which environment
 
-| Deployment                                                              | Supply `resolve` as                                      | Tooling     |
-| ----------------------------------------------------------------------- | -------------------------------------------------------- | ----------- |
-| Anything, zero-config                                                   | a static `{ tag: Class }` map                            | none        |
-| Vite meta-framework (Astro, SvelteKit)                                  | `lazy(import.meta.glob("./components/*.js"))`            | Vite        |
-| Bundled server / edge (Nuxt/Nitro, webpack, Workers, Deno, Vercel Edge) | `lazy(map)` from a **generated** map (`element-ssr gen`) | the bundler |
+| Deployment                                                              | Supply `resolve` as                                         | Tooling     |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------- | ----------- |
+| Anything, zero-config                                                   | a fully eager `{ tag: Class }` catalog                      | none        |
+| Vite meta-framework (Astro, SvelteKit)                                  | `import.meta.glob("./components/*.js")`                     | Vite        |
+| Bundled server / edge (Nuxt/Nitro, webpack, Workers, Deno, Vercel Edge) | a **generated** catalog (`element-js-ssr-renderer catalog`) | the bundler |
 
-The static map always works with no tooling; the lazy modes are opt-in cold-start wins. The package itself
-depends on no bundler and never calls `import()` — your sources do.
+The eager catalog always works with no tooling; the lazy modes are opt-in cold-start wins. The package itself
+depends on no bundler and never calls `import()` — your catalog's loaders do.
 
 ## Unresolved tags
 

@@ -6,7 +6,7 @@ Give it an HTML string (typically the rendered output of Astro / SvelteKit / Nux
 pre-renders every custom element it can resolve **in place** — emitting [Declarative Shadow
 DOM](https://web.dev/articles/declarative-shadow-dom) for shadow components, rendering light-DOM components
 into the element, and carrying element-js' `<!--template-part-->` markers so the elements **hydrate** on the
-client instead of rendering from scratch. Components load eagerly from a static registry, or lazily so only
+client instead of rendering from scratch. Components load eagerly from a static catalog, or lazily so only
 the components actually on the page ever load.
 
 ## 📖 Documentation
