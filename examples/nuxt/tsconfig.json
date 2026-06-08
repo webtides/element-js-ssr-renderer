@@ -1,0 +1,7 @@
+{
+  // https://nuxt.com/docs/guide/concepts/typescript
+  // Extends the Nuxt-generated config (`.nuxt/tsconfig.json`), which wires up
+  // the auto-imported globals (`defineNuxtConfig`, composables, etc.) so the
+  // editor's TS server resolves them. Run `nuxt prepare` if `.nuxt` is missing.
+  "extends": "./.nuxt/tsconfig.json"
+}
