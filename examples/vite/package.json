@@ -1,0 +1,21 @@
+{
+  "name": "element-js-ssr-renderer-vite-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Runnable plain-Vite (MPA) example for @webtides/element-js-ssr-renderer — pre-renders element-js custom elements authored in index.html to Declarative Shadow DOM at build time via the transformIndexHtml hook, then hydrates them in the browser.",
+  "scripts": {
+    "gen:catalog": "element-js-ssr-renderer catalog ./src/components -o ./src/catalog.js",
+    "predev": "npm run gen:catalog",
+    "dev": "vite",
+    "prebuild": "npm run gen:catalog",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@webtides/element-js": "^1.2.11",
+    "@webtides/element-js-ssr-renderer": "file:../..",
+    "@webtides/element-library": "^0.1.2",
+    "vite": "^8.0.0"
+  }
+}

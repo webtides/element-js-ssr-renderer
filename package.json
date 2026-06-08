@@ -15,6 +15,7 @@
     "./node": "./src/adapters/node.js",
     "./nuxt": "./src/adapters/nuxt.js",
     "./sveltekit": "./src/adapters/sveltekit.js",
+    "./vite": "./src/adapters/vite.js",
     "./generate": "./src/generate-catalog.js"
   },
   "bin": {

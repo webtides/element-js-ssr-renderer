@@ -21,6 +21,16 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-08 — Plain Vite adapter `./vite` + example (T-015.8)
+
+**Tasks:** T-015.8
+
+- Added `src/adapters/vite.js` (`./vite` export): a Vite plugin that hooks the **stable `transformIndexHtml`** hook to pre-render element-js custom elements **at build (and dev) time** — the server-less, static-HTML/MPA bucket (vs. the per-request meta-framework adapters). `elementSSR(options)` returns `{ name, transformIndexHtml: { order: "pre", handler } }`; the handler runs the HTML through `renderToString`. Same `resolve`/`onUnresolved`/`serializeState` options as every other adapter. Deliberately **not** built on Vite's experimental Environment API. `order: "pre"` so we only ever parse/serialize the authored document and Vite layers its injected tags on top of our output.
+- `examples/vite/` (new): a plain-Vite MPA. Elements authored as markup in `index.html`; client hydration via `src/client.js` (`<script type="module">`); local components resolved through a **generated** static Catalog (`src/catalog.js` via `gen:catalog` + `predev`/`prebuild`), element-library via an eager `{ tag: Class }` map. Reuses the shared `x-counter`/`x-greeting` components for parity with the other examples. The generated catalog is committed (mirrors the Nuxt example).
+- **Two documented caveats** (the whole reason this adapter is its own thing): (1) only **authored markup** is pre-rendered — a JS-mounted SPA has nothing in the document to transform, so the example is MPA-style; (2) **no `import.meta.glob` in `vite.config.js`** (esbuild loads the config, doesn't transform the sugar) → use the generated Catalog, which pairs with the plugin precisely for this.
+- `test/vite.test.js` (4): plugin shape, static-catalog render → DSD, lazy load-only-what's-present, no-custom-elements document left structurally intact. Verified the example catalog renders end-to-end through the plugin (DSD counter, light-DOM greeting, attribute-seeded props). Suite green at 62.
+- Docs: `docs/frameworks/vite.md` + sidebar entry; `examples/README.md` framework/adapter tables + a note that this one is build-time, not request-time. Added `./vite` to package `exports`.
+
 ## 2026-06-05 — Node/Connect adapter `./node` (T-015.1, partial — adapter + test)
 
 **Tasks:** T-015.1

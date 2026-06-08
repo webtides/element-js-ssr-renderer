@@ -5,11 +5,17 @@ specific meta-framework. Each one SSRs the same kinds of `@webtides/element-js` 
 elements — some authored locally, some from `@webtides/element-library` — to Declarative
 Shadow DOM (and light DOM), then hydrates them in the browser.
 
-| Framework | Directory                   | Status       | SSR hook used                               |
-| --------- | --------------------------- | ------------ | ------------------------------------------- |
-| Astro     | [`astro/`](./astro)         | ✅ available | `onRequest` middleware (`elementSSR`)       |
-| Nuxt      | [`nuxt/`](./nuxt)           | ✅ available | Nitro `render:response` hook (`elementSSR`) |
-| SvelteKit | [`sveltekit/`](./sveltekit) | ✅ available | `handle` hook (`transformPageChunk`)        |
+| Framework | Directory                   | Status       | SSR hook used                                        |
+| --------- | --------------------------- | ------------ | ---------------------------------------------------- |
+| Astro     | [`astro/`](./astro)         | ✅ available | `onRequest` middleware (`elementSSR`)                |
+| Nuxt      | [`nuxt/`](./nuxt)           | ✅ available | Nitro `render:response` hook (`elementSSR`)          |
+| SvelteKit | [`sveltekit/`](./sveltekit) | ✅ available | `handle` hook (`transformPageChunk`)                 |
+| Vite      | [`vite/`](./vite)           | ✅ available | `transformIndexHtml` hook (`elementSSR`, build-time) |
+
+> The Astro/Nuxt/SvelteKit examples pre-render **per request** on a server. The Vite example is
+> different: it's a plain, server-less **MPA / static-HTML** build that pre-renders the elements
+> authored in `index.html` **at build time**, emitting fully-rendered static HTML. Same renderer,
+> same `resolve` sources — just a build hook instead of a request hook.
 
 Each example is **fully self-contained** — its own `package.json`, its own copy of the
 local components, its own framework wiring — so it doubles as a copy-pasteable blueprint.
@@ -49,11 +55,12 @@ Step 2 is small and repetitive, so the package ships a thin **adapter** per fram
 it for you, published as a stable subpath export and living under
 [`src/adapters/`](../src/adapters):
 
-| Adapter export | Status       | What it gives you                                              |
-| -------------- | ------------ | -------------------------------------------------------------- |
-| `…/astro`      | ✅ available | `elementSSR(options)` → an `onRequest` middleware              |
-| `…/nuxt`       | ✅ available | `elementSSR(options)` → a Nitro `render:response` handler      |
-| `…/sveltekit`  | ✅ available | `elementSSR(options)` → a `handle` hook (`transformPageChunk`) |
+| Adapter export | Status       | What it gives you                                                        |
+| -------------- | ------------ | ------------------------------------------------------------------------ |
+| `…/astro`      | ✅ available | `elementSSR(options)` → an `onRequest` middleware                        |
+| `…/nuxt`       | ✅ available | `elementSSR(options)` → a Nitro `render:response` handler                |
+| `…/sveltekit`  | ✅ available | `elementSSR(options)` → a `handle` hook (`transformPageChunk`)           |
+| `…/vite`       | ✅ available | `elementSSR(options)` → a Vite plugin (`transformIndexHtml`, build-time) |
 
 Adapters that deal in `Response` objects (Astro, Nuxt) share one internal kernel,
 [`transformHtmlResponse`](../src/adapters/transform-response.js) — content-type gate, read the

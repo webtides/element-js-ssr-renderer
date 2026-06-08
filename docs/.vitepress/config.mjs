@@ -40,7 +40,9 @@ export default defineConfig({
       },
       {
         text: "Loading & resolving",
-        items: [{ text: "Resolving components", link: "/resolving-components" }],
+        items: [
+          { text: "Resolving components", link: "/resolving-components" },
+        ],
       },
       {
         text: "Framework integrations",
@@ -48,6 +50,7 @@ export default defineConfig({
           { text: "Astro", link: "/frameworks/astro" },
           { text: "SvelteKit", link: "/frameworks/sveltekit" },
           { text: "Nuxt", link: "/frameworks/nuxt" },
+          { text: "Vite", link: "/frameworks/vite" },
         ],
       },
       {
