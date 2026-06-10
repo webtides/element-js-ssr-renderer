@@ -21,6 +21,14 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-10 — Examples consume element-library's `./catalog` (T-003.2.2 → T-003 done)
+
+**Tasks:** T-003, T-003.2, T-003.2.2
+
+- Converted all three examples' SSR resolution to the wrapper-free, library-ships-its-own-catalog pattern: deleted the eager `import Button/Notification` + `{ "el-button": Button, … }` blocks and replaced them with `import catalog from "@webtides/element-library/catalog"` → `resolve: [catalog, <own components>]`. Astro/SvelteKit use the static `import` (Vite `ssr.noExternal` preserves order); Nuxt uses a dynamic `import()` inside the Nitro plugin (eval-order), keeping its generated local catalog for its own `./elements`. Bumped each example's `@webtides/element-library` to `^0.2.0`.
+- **Verified end-to-end** — installed 0.2.0, built, and SSR-served each example, curling the output: Astro 9 / SvelteKit 9 / Nuxt 8 DSD templates, with `el-button` (from the library catalog) and `x-counter` (local) both rendering. The Nuxt/Nitro pass confirms rollup traces the catalog's package-internal `() => import("./src/components/…")` specifiers.
+- Docs: new "A library can ship its own catalog" section + "Who owns which source" responsibility-split table in `docs/resolving-components.md`; reframed the generator's `--manifest` example as the path for libraries that _don't_ ship a catalog; updated `examples/README.md`. Closes **T-003** (consume element-library under SSR with no hand-built registry / no codegen).
+
 ## 2026-06-10 — element-library `0.2.0` ships `./catalog` (T-003.2.1 done; T-003.2.2 unblocked)
 
 **Tasks:** T-003.2, T-003.2.1

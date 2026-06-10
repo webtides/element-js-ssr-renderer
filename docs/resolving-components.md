@@ -67,6 +67,48 @@ await renderToString(html, {
 Only the tags actually present on the page are resolved, so a 200-component library costs **nothing** on a
 page that uses three of them.
 
+## A library can ship its own catalog
+
+The cleanest source is one you don't assemble at all: a library can publish its **own** `Catalog` as a subpath
+export, so you import it and drop it straight into `resolve` — no codegen, no hand-written map, no knowledge of
+the library's internal file layout. `@webtides/element-library` does exactly this, at
+`@webtides/element-library/catalog`:
+
+```js
+import { renderToString } from "@webtides/element-js-ssr-renderer";
+import catalog from "@webtides/element-library/catalog"; // the library's own lazy Catalog
+
+await renderToString(html, {
+  resolve: [
+    catalog, // third-party components — the library ships this
+    import.meta.glob("./components/*.js"), // your own components
+  ],
+});
+```
+
+This works because the catalog ships **inside** the package: its loaders are package-internal relative
+specifiers (`() => import("./src/components/button/button.js")`), so they resolve in any consumer's bundle
+regardless of `node_modules` layout — npm, pnpm, Vite, webpack, edge/Workers all fine — and only the
+components actually on the page load. **Only the package itself can publish this:** at runtime the renderer
+has neither the bundler's module graph nor the package's public-export map, so it can't synthesize
+package-internal specifiers — but the package can, because it ships alongside the source it points at. (This is
+the same output as the [generated catalog](#generate-a-catalog-never-hand-write-one) below, just sourced
+automatically by the library instead of by you.)
+
+### Who owns which source
+
+| Component source                         | Who provides the catalog           | How you consume it                                        |
+| ---------------------------------------- | ---------------------------------- | --------------------------------------------------------- |
+| Third-party library that **ships** one   | the library (a `./catalog` export) | `import catalog from "lib/catalog"` → drop into `resolve` |
+| Your own components, under Vite          | you                                | `import.meta.glob("./components/*.js")`                   |
+| Your own components, bundled server/edge | you                                | generate one — `element-js-ssr-renderer catalog` (below)  |
+| Third-party library that ships **none**  | you                                | generate from its manifest — `… catalog --manifest <cem>` |
+
+The three example apps ([astro](https://github.com/webtides/element-js-ssr-renderer/tree/main/examples/astro),
+[nuxt](https://github.com/webtides/element-js-ssr-renderer/tree/main/examples/nuxt),
+[sveltekit](https://github.com/webtides/element-js-ssr-renderer/tree/main/examples/sveltekit)) each compose
+exactly these two rows: the library's own `catalog` plus their own components.
+
 ## Resolver function (escape hatch)
 
 For arbitrary logic — a remote lookup, a naming scheme, a fallback — pass a function
@@ -110,8 +152,9 @@ a literal the bundler can trace, and you have no folder to glob at runtime. Rath
 # directory convention (x-counter.js → x-counter)
 element-js-ssr-renderer catalog ./components -o ./catalog.js
 
-# or from a custom-elements.json (handles nested layouts, e.g. element-library)
-element-js-ssr-renderer catalog --manifest node_modules/@webtides/element-library/custom-elements.json \
+# or from a custom-elements.json — for a third-party library that does NOT ship
+# its own ./catalog (one that does, like element-library, you just import; see above)
+element-js-ssr-renderer catalog --manifest node_modules/some-lib/custom-elements.json \
   -o ./library.catalog.js
 ```
 

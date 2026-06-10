@@ -5,30 +5,25 @@ import "@webtides/element-js-ssr-renderer/dom-shim";
 
 import { elementSSR } from "@webtides/element-js-ssr-renderer/astro";
 
-// element-library components, loaded eagerly as a static catalog. These are
-// imported up front (as the class, never the `/define` module — that's
-// client-only), so they're always available to the renderer.
-import Button from "@webtides/element-library/button";
-import Notification from "@webtides/element-library/notification";
+// A third-party library that ships its OWN catalog: element-library exposes a
+// lazy Catalog at `@webtides/element-library/catalog` — a `{ tag: () => import(…) }`
+// map of every component, with package-internal specifiers that resolve in any
+// consumer's bundle. We just drop it into `resolve`: no eager imports, no
+// hand-written `{ tag: Class }` map, and only the components actually present on a
+// page are ever loaded (the lazy loaders the renderer doesn't call never run).
+import catalog from "@webtides/element-library/catalog";
 
-// This example composes two component sources to show the headline resolution
-// feature (T-008) — `resolve` takes an array, later sources win on a tag clash:
+// `resolve` takes an array; later sources win on a tag clash (T-008). This shows
+// the responsibility split for the two kinds of source:
 //
-//   • a static `{ tag: Class }` catalog — element-library components, eagerly
-//     imported above;
-//   • a lazy catalog — this project's own components under `./components/*.js`,
-//     code-split by Vite's `import.meta.glob` and imported on demand, so only the
-//     ones actually on a page are ever loaded.
+//   • a third-party library → it ships its catalog, you drop it into `resolve`
+//     (element-library, above);
+//   • your own components → point a bundler glob at them: this project's
+//     components under `./components/*.js`, code-split by Vite's `import.meta.glob`.
 //
-// `import.meta.glob` returns a lazy Catalog as-is, so it drops straight into
-// `resolve` — no wrapper. The renderer derives each tag from the file's basename
-// (`x-counter.js` → `x-counter`) and picks the module's default export.
+// `import.meta.glob` returns a lazy Catalog as-is, so it drops straight in — no
+// wrapper. The renderer derives each tag from the file's basename (`x-counter.js`
+// → `x-counter`) and picks the module's default export.
 export const onRequest = elementSSR({
-  resolve: [
-    {
-      "el-button": Button,
-      "el-notification": Notification,
-    },
-    import.meta.glob("./components/*.js"),
-  ],
+  resolve: [catalog, import.meta.glob("./components/*.js")],
 });

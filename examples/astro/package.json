@@ -13,7 +13,7 @@
     "@astrojs/node": "^9.0.0",
     "@webtides/element-js": "^1.2.11",
     "@webtides/element-js-ssr-renderer": "file:../..",
-    "@webtides/element-library": "^0.1.0",
+    "@webtides/element-library": "^0.2.0",
     "astro": "^5.0.0"
   }
 }

@@ -16,41 +16,33 @@ export default defineNitroPlugin(async (nitroApp) => {
   await import("@webtides/element-js-ssr-renderer/dom-shim"); // must be first
   const { elementSSR } = await import("@webtides/element-js-ssr-renderer/nuxt");
 
-  // element-library components, loaded eagerly as a static catalog (the class,
-  // never the `/define` module — that's client-only).
-  const { default: Button } = await import("@webtides/element-library/button");
-  const { default: Notification } =
-    await import("@webtides/element-library/notification");
+  // A third-party library that ships its OWN catalog: element-library exposes a
+  // lazy Catalog at `@webtides/element-library/catalog` — a `{ tag: () => import(…) }`
+  // map of every component, with package-internal specifiers that resolve in any
+  // consumer's bundle (Nitro/rollup included). Drop it into `resolve`: no eager
+  // imports, no hand-written `{ tag: Class }` map; only components present on a page
+  // load. (Imported dynamically like everything element-js-related here, for Nitro's
+  // eval-order reasons — though the catalog module only defines lazy thunks, so
+  // importing it triggers no `extends HTMLElement` evaluation itself.)
+  const { default: catalog } =
+    await import("@webtides/element-library/catalog");
 
-  // This example composes two component sources to show the headline resolution
-  // feature (T-008) — `resolve` takes an array, later sources win on a tag clash:
-  //
-  //   • a static `{ tag: Class }` catalog — element-library components, eagerly
-  //     imported above;
-  //   • a lazy catalog — this project's own components under `./elements`, imported
-  //     on demand so only the ones actually on a page are ever loaded.
-  //
-  // Unlike the Astro / SvelteKit examples, we can't use `import.meta.glob('./elements/*.js')`:
-  // it's a Vite feature, and Nuxt's server runs on Nitro (rollup), which doesn't
-  // provide it. Rather than hand-write the catalog, we generate it: `npm run gen:catalog`
-  // runs `element-js-ssr-renderer catalog ./elements -o ./server/catalog.js`, emitting
-  // a static Catalog of `() => import('../elements/x-*.js')` thunks — literal specifiers
-  // Nitro can trace and code-split. The generated catalog drops straight into `resolve`
-  // (no wrapper); re-run the generator whenever you add/remove a component.
+  // This project's OWN components: unlike the Astro / SvelteKit examples we can't use
+  // `import.meta.glob('./elements/*.js')` — it's a Vite feature, and Nuxt's server runs
+  // on Nitro (rollup), which doesn't provide it. So we generate a static Catalog of
+  // traceable `() => import('../elements/x-*.js')` thunks via `npm run gen:catalog`
+  // (`element-js-ssr-renderer catalog ./elements -o ./server/catalog.js`); re-run it
+  // whenever you add/remove a component.
   const { default: localComponents } = await import("../catalog.js");
 
-  // `elementSSR` returns a Nitro `render:response` handler; register it on the
-  // hook so it post-processes every page's HTML body — see src/adapters/nuxt.js.
+  // `resolve` takes an array; later sources win on a tag clash (T-008). Responsibility
+  // split: the third-party library ships its catalog (drop it in); your own components
+  // you generate/glob yourself. `elementSSR` returns a Nitro `render:response` handler;
+  // register it so it post-processes every page's HTML body — see src/adapters/nuxt.js.
   nitroApp.hooks.hook(
     "render:response",
     elementSSR({
-      resolve: [
-        {
-          "el-button": Button,
-          "el-notification": Notification,
-        },
-        localComponents,
-      ],
+      resolve: [catalog, localComponents],
     }),
   );
 });
