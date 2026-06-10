@@ -21,6 +21,14 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-10 — npm publish setup: OIDC trusted publishing (unblocks T-003.2.1)
+
+**Tasks:** T-003.2.1
+
+- Prepared the package for its first npm release (`0.0.1` → `0.1.0`): added `publishConfig.access: "public"` (the `@webtides` scope defaults to restricted), `prepublishOnly: "npm test"` as a red-suite guard, and an MIT `LICENSE` file (now shipped in the tarball — 14 files). `npm pack --dry-run` clean.
+- Added `.github/workflows/npm-publish.yml` — tag-triggered (`v*`) **OIDC trusted publishing** (no token, no 2FA), mirroring element-library's workflow: `test` job (`npm ci` + `npm test`, no Playwright since this suite is plain vitest) → `publish` job (`id-token: write`, `npm install -g npm@latest` for npm ≥ 11.5.1, `npm publish --access public`) → `github-release` job (`--generate-notes`, so no CHANGELOG dependency). Added `.nvmrc` (`22`) to match the org.
+- **Still manual:** configure the trusted publisher on npmjs.com (repo `webtides/element-js-ssr-renderer`, workflow `npm-publish.yml`), then push tag `v0.1.0`. Publishing unblocks element-library's `./catalog` `prepack` + smoke-test (T-003.2.1) and the example conversions (T-003.2.2).
+
 ## 2026-06-08 — Plain Vite adapter `./vite` + example (T-015.8)
 
 **Tasks:** T-015.8

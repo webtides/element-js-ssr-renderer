@@ -1,6 +1,6 @@
 {
   "name": "@webtides/element-js-ssr-renderer",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Server-side rendering for @webtides/element-js custom elements. Recursively pre-renders custom elements in an HTML string — emitting Declarative Shadow DOM for shadow components — so they hydrate in the browser instead of rendering from scratch.",
   "type": "module",
   "license": "MIT",
@@ -25,7 +25,11 @@
     "src",
     "bin"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
+    "prepublishOnly": "npm test",
     "test": "vitest run",
     "test:watch": "vitest",
     "docs:dev": "vitepress dev docs",
