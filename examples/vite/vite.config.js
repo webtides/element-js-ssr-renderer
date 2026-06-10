@@ -10,37 +10,32 @@ import "@webtides/element-js-ssr-renderer/dom-shim";
 import { defineConfig } from "vite";
 import { elementSSR } from "@webtides/element-js-ssr-renderer/vite";
 
-// element-library components, loaded eagerly as a static catalog (the class,
-// never the `/define` module — that's client-only). Imported after the shim
-// above, so HTMLElement already exists when these classes are evaluated.
-import Button from "@webtides/element-library/button";
-import Notification from "@webtides/element-library/notification";
+// A third-party library that ships its OWN catalog: element-library exposes a lazy
+// Catalog at `@webtides/element-library/catalog` — a `{ tag: () => import(…) }` map
+// of every component, with package-internal specifiers Vite can trace. We just drop
+// it into `resolve`: no eager imports, no hand-written `{ tag: Class }` map. Its lazy
+// loaders evaluate the component classes at render time, after the dom-shim above.
+import catalog from "@webtides/element-library/catalog";
 
-// This project's own components, as a generated static Catalog. Plain Vite
-// config can't use `import.meta.glob('./src/components/*.js')` — that sugar is
-// transformed only in *app* code, not in the config file (esbuild loads this) —
-// so we generate the lazy `{ tag: () => import() }` map at build time instead:
-// `npm run gen:catalog` runs `element-js-ssr-renderer catalog ./src/components
-// -o ./src/catalog.js`, emitting literal `() => import('./components/x-*.js')`
-// thunks Vite can trace and code-split. It drops straight into `resolve` (no
-// wrapper); re-run the generator whenever you add/remove a component.
+// This project's own components, as a generated static Catalog. Plain Vite config
+// can't use `import.meta.glob('./src/components/*.js')` — that sugar is transformed
+// only in *app* code, not in the config file (esbuild loads this) — so we generate
+// the lazy `{ tag: () => import() }` map at build time instead: `npm run gen:catalog`
+// runs `element-js-ssr-renderer catalog ./src/components -o ./src/catalog.js`,
+// emitting literal `() => import('./components/x-*.js')` thunks Vite can trace and
+// code-split. It drops straight into `resolve` (no wrapper); re-run the generator
+// whenever you add/remove a component.
 import localComponents from "./src/catalog.js";
 
 // `elementSSR` returns a Vite plugin that hooks `transformIndexHtml` (the stable
 // HTML-transform hook), so it pre-renders the custom elements authored in
-// `index.html` at build/dev time — see src/adapters/vite.js. `resolve` composes
-// two sources (later wins on a tag clash): the eager element-library catalog and
-// this project's lazy generated one.
+// `index.html` at build/dev time — see src/adapters/vite.js. `resolve` composes two
+// sources (later wins on a tag clash): the library's own catalog and this project's
+// generated one.
 export default defineConfig({
   plugins: [
     elementSSR({
-      resolve: [
-        {
-          "el-button": Button,
-          "el-notification": Notification,
-        },
-        localComponents,
-      ],
+      resolve: [catalog, localComponents],
     }),
   ],
 });

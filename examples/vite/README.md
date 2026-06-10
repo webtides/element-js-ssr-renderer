@@ -10,8 +10,9 @@ rendered, static HTML.
 
 It exercises **both component sources at once**:
 
-- **element-library components** (`el-button`, `el-notification`) — loaded
-  eagerly into a static `{ tag: Class }` catalog;
+- **element-library components** (`el-button`, `el-notification`) — resolved via
+  the library's own shipped `@webtides/element-library/catalog`, dropped straight
+  into `resolve` (no eager imports, no hand-written map);
 - **local components** (`x-counter`, `x-greeting`) — authored in
   `src/components/` and resolved **lazily** via a **generated** static Catalog
   (`src/catalog.js`), so only the ones on a page are loaded.
