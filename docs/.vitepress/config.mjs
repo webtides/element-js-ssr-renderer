@@ -47,6 +47,7 @@ export default defineConfig({
       {
         text: "Framework integrations",
         items: [
+          { text: "Node (Express / Connect)", link: "/frameworks/node" },
           { text: "Astro", link: "/frameworks/astro" },
           { text: "SvelteKit", link: "/frameworks/sveltekit" },
           { text: "Nuxt", link: "/frameworks/nuxt" },

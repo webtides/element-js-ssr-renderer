@@ -21,6 +21,14 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-10 — `./node` adapter lands with example + docs (T-015.1 done)
+
+**Tasks:** T-015, T-015.1
+
+- Closed T-015.1 — the Connect-style `(req, res, next)` middleware (`./node`, `src/adapters/node.js`) and its 6 tests already existed; the remaining checklist work was the **example + docs**. The adapter buffers `res.write`/`res.end` and transforms the collected `text/html` body once on `end` (fixing `Content-Length`); non-HTML, already-flushed, and failed-transform responses pass through untouched. It does **not** reuse the `transformHtmlResponse` kernel as the task originally guessed — a plain Node server hands neither a `Response` nor an HTML string, so res buffering is the right primitive.
+- Added `examples/node/` — a plain **Express** app, deliberately **SSR-only** (per decision) to isolate the HTTP-middleware concern; client hydration is identical to the other examples and not the new thing here. Composes element-library's shipped `./catalog` with a **hand-written lazy local Catalog** (`{ tag: () => import(…) }`) since plain Node has no Vite `import.meta.glob`. Reuses the Astro `x-counter`/`x-greeting` components for parity. **Verified** with `npm install && npm start` + curl: 8 DSD templates, `el-button` (catalog) + light-DOM `x-greeting` + attribute-seeded `x-counter` (Apples: 3 / Pears: 0), nested `el-button` inside `el-notification`.
+- Docs: `docs/frameworks/node.md` documents Express **plus** mounting the same middleware on raw `http`, Connect, Fastify (`@fastify/middie`), Koa (`koa-connect`), and Hono-node, the mount-before-routes rule, the buffer-vs-streaming note, and the two no-bundler client-hydration options — so the whole `(req,res,next)` server range is covered without an example dir each. Added the Node row to both `examples/README.md` tables + the VitePress sidebar; refreshed the root README framework lists (which were also missing Vite). Suite green at 62.
+
 ## 2026-06-10 — Examples consume element-library's `./catalog` (T-003.2.2 → T-003 done)
 
 **Tasks:** T-003, T-003.2, T-003.2.2

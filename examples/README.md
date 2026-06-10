@@ -5,17 +5,20 @@ specific meta-framework. Each one SSRs the same kinds of `@webtides/element-js` 
 elements — some authored locally, some from `@webtides/element-library` — to Declarative
 Shadow DOM (and light DOM), then hydrates them in the browser.
 
-| Framework | Directory                   | Status       | SSR hook used                                        |
-| --------- | --------------------------- | ------------ | ---------------------------------------------------- |
-| Astro     | [`astro/`](./astro)         | ✅ available | `onRequest` middleware (`elementSSR`)                |
-| Nuxt      | [`nuxt/`](./nuxt)           | ✅ available | Nitro `render:response` hook (`elementSSR`)          |
-| SvelteKit | [`sveltekit/`](./sveltekit) | ✅ available | `handle` hook (`transformPageChunk`)                 |
-| Vite      | [`vite/`](./vite)           | ✅ available | `transformIndexHtml` hook (`elementSSR`, build-time) |
+| Framework      | Directory                   | Status       | SSR hook used                                        |
+| -------------- | --------------------------- | ------------ | ---------------------------------------------------- |
+| Node (Express) | [`node/`](./node)           | ✅ available | Connect-style middleware (`elementSSR`)              |
+| Astro          | [`astro/`](./astro)         | ✅ available | `onRequest` middleware (`elementSSR`)                |
+| Nuxt           | [`nuxt/`](./nuxt)           | ✅ available | Nitro `render:response` hook (`elementSSR`)          |
+| SvelteKit      | [`sveltekit/`](./sveltekit) | ✅ available | `handle` hook (`transformPageChunk`)                 |
+| Vite           | [`vite/`](./vite)           | ✅ available | `transformIndexHtml` hook (`elementSSR`, build-time) |
 
-> The Astro/Nuxt/SvelteKit examples pre-render **per request** on a server. The Vite example is
-> different: it's a plain, server-less **MPA / static-HTML** build that pre-renders the elements
-> authored in `index.html` **at build time**, emitting fully-rendered static HTML. Same renderer,
-> same `resolve` sources — just a build hook instead of a request hook.
+> The Node/Astro/Nuxt/SvelteKit examples pre-render **per request** on a server. (The Node one is
+> the bare-metal case — a plain Express server with no meta-framework; its middleware works on any
+> `(req, res, next)` server, see [`docs/frameworks/node.md`](../docs/frameworks/node.md).) The Vite
+> example is different: it's a plain, server-less **MPA / static-HTML** build that pre-renders the
+> elements authored in `index.html` **at build time**, emitting fully-rendered static HTML. Same
+> renderer, same `resolve` sources — just a build hook instead of a request hook.
 
 Each example is **fully self-contained** — its own `package.json`, its own copy of the
 local components, its own framework wiring — so it doubles as a copy-pasteable blueprint.
@@ -58,6 +61,7 @@ it for you, published as a stable subpath export and living under
 
 | Adapter export | Status       | What it gives you                                                        |
 | -------------- | ------------ | ------------------------------------------------------------------------ |
+| `…/node`       | ✅ available | `elementSSR(options)` → a Connect-style `(req, res, next)` middleware    |
 | `…/astro`      | ✅ available | `elementSSR(options)` → an `onRequest` middleware                        |
 | `…/nuxt`       | ✅ available | `elementSSR(options)` → a Nitro `render:response` handler                |
 | `…/sveltekit`  | ✅ available | `elementSSR(options)` → a `handle` hook (`transformPageChunk`)           |
@@ -67,8 +71,10 @@ Adapters that deal in `Response` objects (Astro, Nuxt) share one internal kernel
 [`transformHtmlResponse`](../src/adapters/transform-response.js) — content-type gate, read the
 body, `renderToString`, re-wrap preserving status/headers. SvelteKit's `transformPageChunk`
 hands you the HTML **string** directly, so its adapter just calls `renderToString(html, opts)`
-and needs no Response kernel. New adapters land **with** their example and a test — see the
-checklist below.
+and needs no Response kernel. The Node adapter is lower-level still: a plain Node server gives no
+`Response` and no string hook, so it buffers `res.write`/`res.end` itself and transforms the
+collected body on `end`. New adapters land **with** their example and a test — see the checklist
+below.
 
 ## Adding a new example
 

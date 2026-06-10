@@ -1,0 +1,17 @@
+{
+  "name": "element-js-ssr-renderer-node-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Runnable plain-Node (Express) example for @webtides/element-js-ssr-renderer — a Connect-style middleware that SSRs element-js custom elements (local + element-library) to Declarative Shadow DOM in every HTML response.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@webtides/element-js": "^1.2.11",
+    "@webtides/element-js-ssr-renderer": "file:../..",
+    "@webtides/element-library": "^0.2.0",
+    "express": "^5.0.0"
+  }
+}
