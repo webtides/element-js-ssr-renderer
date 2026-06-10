@@ -21,6 +21,14 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-10 — element-library `0.2.0` ships `./catalog` (T-003.2.1 done; T-003.2.2 unblocked)
+
+**Tasks:** T-003.2, T-003.2.1
+
+- Completed T-003.2.1 in the **element-library** repo (commit `cddffe1`): `prepack` now runs `analyze → build:types → gen:catalog` so `catalog.js` regenerates on every release; added `test/catalog.smoke.mjs` — a plain-Node SSR smoke test (kept out of the browser-mode Playwright suite) that imports the renderer's `dom-shim` + `renderToString`, passes the imported catalog straight to `resolve`, and asserts `el-button` → DSD; exposed as `test:catalog` and wired into both CI workflows. Added `@webtides/element-js-ssr-renderer ^0.1.0` devDep.
+- **Released `@webtides/element-library@0.2.0`** (minor — new `./catalog` public export): merged `feat/ssr-catalog-export` → `main` (fast-forward), bumped version, finalized CHANGELOG (`## [0.2.0]`), tagged `v0.2.0`, pushed → OIDC publish workflow. First run red on a **flaky** `scroll-to-top` browser test (`expected 661 to be 0`, unrelated to the catalog); a `--failed` re-run went green → published tokenless + GitHub Release created. Verified the published tarball ships `catalog.js` and `exports["./catalog"]` resolves.
+- **Unblocks T-003.2.2** (this repo): the examples can now consume `import catalog from "@webtides/element-library/catalog"` and drop their eager element-library import blocks.
+
 ## 2026-06-10 — Published `@webtides/element-js-ssr-renderer@0.1.0` to npm (follow-up)
 
 **Tasks:** T-003.2.1
