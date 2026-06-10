@@ -21,6 +21,14 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-10 — Published `@webtides/element-js-ssr-renderer@0.1.0` to npm (follow-up)
+
+**Tasks:** T-003.2.1
+
+- First release is **live on npm** (`0.1.0`, public). Done as a **manual bootstrap publish** (`npm login` + `npm publish --otp`), because npm trusted publishing can't attach to a package that doesn't exist yet — the package had to exist before the OIDC trusted-publisher could be configured. Corrects the prior entry's assumption that the first release would go via tag push.
+- Benign publish-time warnings (`bin … removed`, `repository` string→object) confirmed cosmetic: the tarball's `package.json` retains the correct `bin`, and the CLI runs — so `npx @webtides/element-js-ssr-renderer catalog …` (element-library's `gen:catalog`) works.
+- **Next:** configure the npmjs.com trusted publisher now that the package exists → all future releases are tokenless OIDC via `v*` tag push. **Do not** push a `v0.1.0` tag (the workflow would try to republish 0.1.0 and fail on the duplicate version) — the first tag-driven release should be the next version bump. Unblocks T-003.2.1 (element-library `./catalog` `prepack` + smoke-test).
+
 ## 2026-06-10 — npm publish setup: OIDC trusted publishing (unblocks T-003.2.1)
 
 **Tasks:** T-003.2.1
