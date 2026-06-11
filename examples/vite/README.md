@@ -14,8 +14,9 @@ It exercises **both component sources at once**:
   the library's own shipped `@webtides/element-library/catalog`, dropped straight
   into `resolve` (no eager imports, no hand-written map);
 - **local components** (`x-counter`, `x-greeting`) — authored in
-  `src/components/` and resolved **lazily** via a **generated** static Catalog
-  (`src/catalog.js`), so only the ones on a page are loaded.
+  `src/components/` and resolved via the plugin's **`components` option**, which
+  discovers them from that directory (and watches it in dev) — no generated
+  catalog file, no CLI run.
 
 …and both render paths:
 
@@ -70,26 +71,31 @@ in the static file.
 
 ## How it's wired
 
-| File                  | Role                                                                            |
-| --------------------- | ------------------------------------------------------------------------------- |
-| `vite.config.js`      | Imports the DOM shim first, then registers `elementSSR(...)` with both sources. |
-| `index.html`          | Authors the custom elements as plain HTML; global styles/tokens; client entry.  |
-| `src/client.js`       | Loads each component's `define` so the pre-rendered elements hydrate.           |
-| `src/components/*.js` | Local element-js components (default-export the class + a `define()`).          |
-| `src/catalog.js`      | **Generated** lazy Catalog of the local components (`npm run gen:catalog`).     |
+| File                  | Role                                                                                |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| `vite.config.js`      | Imports the DOM shim first, then `elementSSR({ components, resolve })`.             |
+| `index.html`          | Authors the custom elements as plain HTML; global styles/tokens; client entry.      |
+| `src/client.js`       | Loads each component's `define` so the pre-rendered elements hydrate.               |
+| `src/components/*.js` | Local element-js components — discovered automatically via the `components` option. |
 
-### Why a generated catalog (not `import.meta.glob`)?
+### How local components are resolved (the `components` option)
 
 `import.meta.glob('./src/components/*.js')` is Vite sugar that's transformed only
-in **app** code — not in `vite.config.js`, which Vite loads with esbuild. So the
-config can't glob its own components. Instead, the `gen:catalog` script
-(wired to `predev`/`prebuild`) runs the renderer's CLI:
+in **app** code — not in `vite.config.js`, which Vite loads with esbuild — so the
+config can't glob its own components. Rather than hand-run the
+`element-js-ssr-renderer catalog` CLI, this example passes the directory to the
+plugin:
 
-```bash
-element-js-ssr-renderer catalog ./src/components -o ./src/catalog.js
+```js
+elementSSR({ components: "./src/components", resolve: [catalog] });
 ```
 
-…emitting a static `{ tag: () => import('./components/x-*.js') }` Catalog that
-Vite can trace and code-split. It drops straight into `resolve` — no wrapper.
-Re-run it (or just `npm run dev` / `npm run build`) whenever you add or remove a
-component.
+The plugin discovers the components from that directory and merges them into the
+resolve map (own components win a tag clash). In `npm run dev` it **watches** the
+directory — add, remove, or edit a component and the page re-renders. element-library's
+components come from its shipped `@webtides/element-library/catalog`, passed via
+`resolve`.
+
+> The standalone `element-js-ssr-renderer catalog` generator is still the path for
+> non-Vite targets (see the [Eleventy](../eleventy) and [Nuxt](../nuxt) examples) or
+> when you want a committed catalog file.

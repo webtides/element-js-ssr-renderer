@@ -11,22 +11,18 @@ static HTML.
 import "@webtides/element-js-ssr-renderer/dom-shim"; // must come first: installs HTMLElement etc.
 import { defineConfig } from "vite";
 import { elementSSR } from "@webtides/element-js-ssr-renderer/vite";
-import Button from "@webtides/element-library/button";
-import localComponents from "./src/catalog.js"; // generated lazy Catalog (see below)
+import catalog from "@webtides/element-library/catalog";
 
 export default defineConfig({
   plugins: [
     elementSSR({
-      resolve: [
-        { "el-button": Button }, // eager element-library components
-        localComponents, // this project's — loaded on demand
-      ],
+      components: "./src/components", // this project's components — discovered + watched
+      resolve: [catalog], // other sources, e.g. a library's own catalog
     }),
   ],
 });
 ```
 
-`elementSSR` takes the same sources as everywhere else (see [Resolving components](/resolving-components)).
 Author components as plain HTML in your `.html` files, keep document-global styles in a `<style>` (so
 the renderer can adopt them into shadow roots), and load each component's `define` from a
 `<script type="module">` on the client.
@@ -37,24 +33,44 @@ into an empty `<div id="app">` at runtime) has nothing in the document to transf
 **multi-page / static-HTML (MPA)** sites where the elements appear as tags in your `.html` files.
 :::
 
-::: warning No `import.meta.glob` in the config
-`import.meta.glob` is transformed only in _app_ code, not in `vite.config.js` (esbuild loads it). So
-resolve your own components with a **generated** static Catalog — it pairs with this plugin precisely
-for this reason:
+## Resolving your own components
 
-```bash
-element-js-ssr-renderer catalog ./src/components -o ./src/catalog.js
+`elementSSR` takes the same `resolve` sources as every other adapter (see
+[Resolving components](/resolving-components)) — but for **this project's own** components, prefer the
+`components` option over building a catalog by hand:
+
+```js
+elementSSR({ components: "./src/components" });
 ```
 
-…then `import` that file in the config. Wire it to `predev`/`prebuild` scripts so it can't drift.
+The plugin scans that directory (the `x-foo.js` → `x-foo` filename convention) and merges the
+discovered components into `resolve` for you — **own components last, so they win** a tag clash with
+anything you also pass in `resolve`. There's no `element-js-ssr-renderer catalog` run and no generated
+file to commit; the catalog is built in memory at startup.
+
+This is sourced from the **filesystem on purpose**, not Vite's module graph: the module graph only
+holds modules your JS imports, but the catalog has to resolve components referenced **only as tags** in
+your HTML (never imported in JS) — so a directory scan is the correct source.
+
+::: tip Dev watch
+In `vite dev` the `components` directory is **watched**. Add or remove a component (the catalog's tags
+change) or edit one (its rendered output changes) and the plugin rebuilds the catalog and triggers a
+full reload, so the page re-renders with the change — no restart.
+:::
+
+::: info When to use the CLI generator instead
+`components` is the Vite-native path. The standalone generator (`element-js-ssr-renderer catalog <dir>
+-o catalog.js`) still has its place: non-Vite targets (Eleventy, Nuxt/Nitro) that need a committed,
+bundler-traceable catalog file, or when you'd rather check the map into source control. (`import.meta.glob`
+is _not_ an option here — it's transformed only in app code, not in `vite.config.js`, which esbuild loads.)
 :::
 
 ## Runnable example
 
 A complete, runnable version lives in
 [`examples/vite/`](https://github.com/webtides/element-js-ssr-renderer/tree/main/examples/vite) — a
-plain-Vite MPA composing element-library components (an eager static catalog) with its own (a generated
-lazy Catalog), covering both the shadow (DSD) and light-DOM paths.
+plain-Vite MPA composing element-library components (via the library's shipped catalog) with its own
+(via the `components` option), covering both the shadow (DSD) and light-DOM paths.
 
 ```bash
 cd examples/vite && npm install && npm run build && npm run preview

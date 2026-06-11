@@ -1,14 +1,26 @@
 import "../src/dom-shim.js"; // must precede any component import
+import { EventEmitter } from "node:events";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, vi } from "vitest";
 import { elementSSR } from "../src/adapters/vite.js";
 
 import Button from "@webtides/element-library/button";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const fixturesDir = path.join(here, "fixtures/components"); // holds el-fixture.js (tag el-fixture)
 
 /** Invoke the plugin's `transformIndexHtml` hook the way Vite would, returning the transformed HTML. */
 const transform = (plugin, html) => {
   const hook = plugin.transformIndexHtml;
   const handler = typeof hook === "function" ? hook : hook.handler;
   return handler(html);
+};
+
+/** Drive the `configResolved` lifecycle hook Vite would (build or serve), then return the plugin. */
+const start = (plugin, command = "build", root = here) => {
+  plugin.configResolved?.({ command, root });
+  return plugin;
 };
 
 describe("elementSSR (vite plugin)", () => {
@@ -41,5 +53,50 @@ describe("elementSSR (vite plugin)", () => {
     );
     expect(out).toContain("<p>hi</p>");
     expect(out).toContain("<title>x</title>");
+  });
+
+  describe("components (auto-resolved directory)", () => {
+    it("discovers and renders components from the directory", async () => {
+      const plugin = start(elementSSR({ components: "fixtures/components" }));
+      const out = await transform(plugin, "<el-fixture></el-fixture>");
+      expect(out).toContain('<template shadowrootmode="open">');
+      expect(out).toContain("fixture");
+    });
+
+    it("composes with `resolve` — both sources resolve in one document", async () => {
+      const plugin = start(
+        elementSSR({
+          components: "fixtures/components",
+          resolve: { "el-button": Button },
+        }),
+      );
+      const out = await transform(
+        plugin,
+        "<el-button>Save</el-button><el-fixture></el-fixture>",
+      );
+      expect(out).toContain("Save"); // from `resolve`
+      expect(out).toContain("fixture"); // from `components`
+    });
+
+    it("dev: watches the dir and full-reloads on a component change", () => {
+      const plugin = start(
+        elementSSR({ components: "fixtures/components" }),
+        "serve",
+      );
+      const watcher = Object.assign(new EventEmitter(), { add: vi.fn() });
+      const send = vi.fn();
+      plugin.configureServer({ watcher, ws: { send } });
+
+      expect(watcher.add).toHaveBeenCalledWith(fixturesDir);
+
+      // A JS change inside the dir triggers a full reload.
+      watcher.emit("change", path.join(fixturesDir, "el-fixture.js"));
+      expect(send).toHaveBeenCalledWith({ type: "full-reload", path: "*" });
+
+      // A file outside the components dir is ignored.
+      send.mockClear();
+      watcher.emit("change", path.join(here, "vite.test.js"));
+      expect(send).not.toHaveBeenCalled();
+    });
   });
 });

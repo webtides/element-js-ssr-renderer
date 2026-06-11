@@ -21,6 +21,16 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-11 — Vite `components` auto-resolution + dev-watch (T-015.9 done)
+
+**Tasks:** T-015, T-015.9
+
+- Added a `components` option to the `./vite` `elementSSR` plugin (folded into the existing plugin, not a separate one — Option 1). Point it at a directory and the plugin discovers this project's components (reusing `catalogEntriesFromDirectory`), builds `{ tag: () => import(fileURL) }` in memory, and merges it into `resolve` — **own components last, so they win** a tag clash. No `element-js-ssr-renderer catalog` run, no committed catalog file.
+- **Reframed the task's premise.** It asked to "auto-discover from the Vite module graph," but the module graph only holds modules app JS imports — it would miss components referenced **only as authored tags** in HTML (never imported), which is the exact lazy case the catalog is for. So discovery is **filesystem-sourced** on purpose; documented that reasoning in the adapter + Vite docs.
+- **Dev-watch / "HMR":** `configureServer` watches the components dir; on add/unlink/change of a `*.js` inside it, the plugin rebuilds the catalog and sends a full reload, with a per-change `?v=` cache-buster on the loader's `import()` so Node re-evaluates the edited module. It's a full re-render (not in-place HMR) since the SSR output is regenerated wholesale.
+- `src/adapters/vite.js` grew `configResolved`/`configureServer` + a `resolveSources()` composition; `test/vite.test.js` +3 (discovery render, composes with `resolve`, watcher fires `full-reload` and ignores files outside the dir). Suite green at **69**.
+- Migrated `examples/vite` to `components: "./src/components"` — dropped the `gen:catalog`/`predev`/`prebuild` scripts and the committed `src/catalog.js`. **Verified:** `npm run build` → 9 DSD templates; `vite dev` serves the same 9 live (x-counter via `components`, el-button via the library catalog). Updated `docs/frameworks/vite.md` (new "Resolving your own components" + dev-watch + when-to-use-the-CLI) and the example README. The standalone CLI generator (T-013) remains the path for non-Vite targets / committed catalogs.
+
 ## 2026-06-11 — Eleventy (11ty) SSG adapter + example (T-015.7 done)
 
 **Tasks:** T-015, T-015.7, T-015.7.1, T-015.7.2, T-015.7.3, T-015.7.4

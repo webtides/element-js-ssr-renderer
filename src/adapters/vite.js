@@ -1,4 +1,13 @@
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { renderToString } from "../render-to-string.js";
+import { catalogEntriesFromDirectory } from "../generate-catalog.js";
+
+/** True if `file` is `dir` itself excluded — i.e. `file` sits somewhere under `dir`. */
+function isInside(dir, file) {
+  const rel = path.relative(dir, file);
+  return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
 
 /**
  * Vite plugin that pre-renders @webtides/element-js custom elements **authored as markup in your
@@ -60,28 +69,115 @@ import { renderToString } from "../render-to-string.js";
  * `ejs/json` script + per-host `ejs:key`s) so it hydrates with that state instead of property
  * defaults; enable element-js' matching `serializeState` config on the client too.
  *
+ * ## `components`: auto-resolve this project's own components
+ *
+ * Pass a `components` **directory** and the plugin discovers this project's element-js components
+ * from it (by the same flat `x-foo.js` → `x-foo` filename convention as the
+ * [generator](/api/#cli)) and merges them into `resolve` for you — **own components last, so they
+ * win** a tag clash with anything in `resolve`. So you never hand-run the
+ * `element-js-ssr-renderer catalog` CLI and there's no generated file to commit; the catalog is
+ * built in memory at startup. (Eleventy/Nuxt and other non-Vite targets still use the CLI — there's
+ * no Vite plugin to do it for them.)
+ *
+ * This is the *resolution* half of the "deep Vite" angle, distinct from the rendering above: it's
+ * sourced from the **filesystem**, not Vite's module graph, on purpose — the module graph only holds
+ * modules your JS imports, but the catalog must resolve components referenced **only as authored
+ * tags** in your HTML (never imported), so a directory scan is the correct source.
+ *
+ * ```js
+ * elementSSR({
+ *   components: "./src/components",   // discovered + watched — no CLI run, no committed catalog
+ *   resolve: [catalog],               // still compose other sources (e.g. a library's catalog)
+ * });
+ * ```
+ *
+ * In `vite dev` the directory is **watched**: adding or removing a component changes the catalog's
+ * tags, and editing one changes its rendered output — either way the plugin rebuilds the catalog and
+ * triggers a full reload so the page re-renders (a per-change cache-buster on the loader's `import()`
+ * makes Node pick up the edited module). `components` is independent of `resolve`; use either or both.
+ *
  * @param {{
  *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
+ *   components?: string,
  *   onUnresolved?: (tag: string) => void,
  *   serializeState?: boolean,
  * }} [options]
- * @return {{ name: string, transformIndexHtml: { order: "pre", handler: (html: string) => Promise<string> } }} a Vite plugin
+ * @return {import('vite').Plugin} a Vite plugin
  */
 export function elementSSR({
   resolve,
+  components,
   onUnresolved,
   serializeState = false,
 } = {}) {
-  const options = { resolve, onUnresolved, serializeState };
+  // The auto-discovered catalog of this project's own components — rebuilt from `components` on
+  // startup and, in dev, whenever a file there is added/removed/edited. A mutable holder so the
+  // render handler always composes the latest version without the plugin being re-created.
+  let autoCatalog = {};
+  let componentsDir; // absolute, resolved against the Vite config root
+  let isDev = false;
+  let version = 0; // dev cache-buster: bumped on every change so the loader's import() re-evaluates
+
+  /** Scan `componentsDir` and rebuild `autoCatalog` as `{ tag: () => import(fileURL[?v]) }`. */
+  function rebuild() {
+    if (!componentsDir) return;
+    const next = {};
+    for (const { tag, file } of catalogEntriesFromDirectory(componentsDir)) {
+      // In dev the `?v=` query busts Node's ESM module cache so a component's edits show on the next
+      // render; at build time there's no query (the module is imported once).
+      const href = pathToFileURL(file).href + (isDev ? `?v=${version}` : "");
+      next[tag] = () => import(href);
+    }
+    autoCatalog = next;
+  }
+
+  /** Compose the user's `resolve` with the auto-catalog — own components last, so they win. */
+  function resolveSources() {
+    if (!componentsDir) return resolve;
+    const user =
+      resolve == null ? [] : Array.isArray(resolve) ? resolve : [resolve];
+    return [...user, autoCatalog];
+  }
+
   return {
     name: "@webtides/element-js-ssr-renderer",
+
+    // Resolve `components` against the project root and do the initial scan. Runs for `vite build`
+    // and `vite dev` alike.
+    configResolved(config) {
+      isDev = config.command === "serve";
+      if (components != null) {
+        componentsDir = path.resolve(config.root ?? process.cwd(), components);
+        rebuild();
+      }
+    },
+
+    // Dev only: watch the components directory and re-render on any change to a component module.
+    configureServer(server) {
+      if (!componentsDir) return;
+      server.watcher.add(componentsDir);
+      const onChange = (file) => {
+        if (!isInside(componentsDir, file) || !/\.[cm]?js$/.test(file)) return;
+        version++;
+        rebuild();
+        server.ws.send({ type: "full-reload", path: "*" });
+      };
+      for (const event of ["add", "unlink", "change"])
+        server.watcher.on(event, onChange);
+    },
+
     // Stable, long-supported hook (unaffected by the experimental Environment API). Runs for every
     // processed HTML entry in both `vite dev` and `vite build`. `order: "pre"` runs us before Vite
     // injects its own tags (the dev client, module preloads), so we only ever parse/serialize the
     // authored document, and Vite's injections layer on top of our output afterwards.
     transformIndexHtml: {
       order: "pre",
-      handler: (html) => renderToString(html, options),
+      handler: (html) =>
+        renderToString(html, {
+          resolve: resolveSources(),
+          onUnresolved,
+          serializeState,
+        }),
     },
   };
 }
