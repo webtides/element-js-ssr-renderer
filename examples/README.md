@@ -5,13 +5,14 @@ specific meta-framework. Each one SSRs the same kinds of `@webtides/element-js` 
 elements — some authored locally, some from `@webtides/element-library` — to Declarative
 Shadow DOM (and light DOM), then hydrates them in the browser.
 
-| Framework      | Directory                   | Status       | SSR hook used                                        |
-| -------------- | --------------------------- | ------------ | ---------------------------------------------------- |
-| Node (Express) | [`node/`](./node)           | ✅ available | Connect-style middleware (`elementSSR`)              |
-| Astro          | [`astro/`](./astro)         | ✅ available | `onRequest` middleware (`elementSSR`)                |
-| Nuxt           | [`nuxt/`](./nuxt)           | ✅ available | Nitro `render:response` hook (`elementSSR`)          |
-| SvelteKit      | [`sveltekit/`](./sveltekit) | ✅ available | `handle` hook (`transformPageChunk`)                 |
-| Vite           | [`vite/`](./vite)           | ✅ available | `transformIndexHtml` hook (`elementSSR`, build-time) |
+| Framework       | Directory                   | Status       | SSR hook used                                        |
+| --------------- | --------------------------- | ------------ | ---------------------------------------------------- |
+| Node (Express)  | [`node/`](./node)           | ✅ available | Connect-style middleware (`elementSSR`)              |
+| Astro           | [`astro/`](./astro)         | ✅ available | `onRequest` middleware (`elementSSR`)                |
+| Nuxt            | [`nuxt/`](./nuxt)           | ✅ available | Nitro `render:response` hook (`elementSSR`)          |
+| SvelteKit       | [`sveltekit/`](./sveltekit) | ✅ available | `handle` hook (`transformPageChunk`)                 |
+| Vite            | [`vite/`](./vite)           | ✅ available | `transformIndexHtml` hook (`elementSSR`, build-time) |
+| Eleventy (11ty) | [`eleventy/`](./eleventy)   | ✅ available | `addTransform` hook (`elementSSR`, build-time)       |
 
 > The Node/Astro/Nuxt/SvelteKit examples pre-render **per request** on a server. (The Node one is
 > the bare-metal case — a plain Express server with no meta-framework; its middleware works on any
@@ -59,13 +60,14 @@ Step 2 is small and repetitive, so the package ships a thin **adapter** per fram
 it for you, published as a stable subpath export and living under
 [`src/adapters/`](../src/adapters):
 
-| Adapter export | Status       | What it gives you                                                        |
-| -------------- | ------------ | ------------------------------------------------------------------------ |
-| `…/node`       | ✅ available | `elementSSR(options)` → a Connect-style `(req, res, next)` middleware    |
-| `…/astro`      | ✅ available | `elementSSR(options)` → an `onRequest` middleware                        |
-| `…/nuxt`       | ✅ available | `elementSSR(options)` → a Nitro `render:response` handler                |
-| `…/sveltekit`  | ✅ available | `elementSSR(options)` → a `handle` hook (`transformPageChunk`)           |
-| `…/vite`       | ✅ available | `elementSSR(options)` → a Vite plugin (`transformIndexHtml`, build-time) |
+| Adapter export | Status       | What it gives you                                                          |
+| -------------- | ------------ | -------------------------------------------------------------------------- |
+| `…/node`       | ✅ available | `elementSSR(options)` → a Connect-style `(req, res, next)` middleware      |
+| `…/astro`      | ✅ available | `elementSSR(options)` → an `onRequest` middleware                          |
+| `…/nuxt`       | ✅ available | `elementSSR(options)` → a Nitro `render:response` handler                  |
+| `…/sveltekit`  | ✅ available | `elementSSR(options)` → a `handle` hook (`transformPageChunk`)             |
+| `…/vite`       | ✅ available | `elementSSR(options)` → a Vite plugin (`transformIndexHtml`, build-time)   |
+| `…/eleventy`   | ✅ available | `elementSSR(options)` → an Eleventy transform (`addTransform`, build-time) |
 
 Adapters that deal in `Response` objects (Astro, Nuxt) share one internal kernel,
 [`transformHtmlResponse`](../src/adapters/transform-response.js) — content-type gate, read the

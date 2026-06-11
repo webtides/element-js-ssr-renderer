@@ -53,6 +53,7 @@ export default defineConfig({
           { text: "SvelteKit", link: "/frameworks/sveltekit" },
           { text: "Nuxt", link: "/frameworks/nuxt" },
           { text: "Vite", link: "/frameworks/vite" },
+          { text: "Eleventy (11ty)", link: "/frameworks/eleventy" },
         ],
       },
       {

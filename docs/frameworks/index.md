@@ -16,7 +16,7 @@ framework isn't named on its own page.
 | 1   | **Response in/out**      | An SSR hook gives you (or lets you return) a `Response` / response object | [`/astro`](/frameworks/astro), [`/nuxt`](/frameworks/nuxt) — shared kernel |
 | 2   | **HTML string in/out**   | A hook hands you the rendered document as a string                        | [`/sveltekit`](/frameworks/sveltekit), or call `renderToString` directly   |
 | 3   | **Node `res` buffering** | A plain `(req, res, next)` server, no meta-framework hook                 | [`/node`](/frameworks/node)                                                |
-| 4   | **Build-time / SSG**     | A build/transform step rewrites HTML files, no server                     | [`/vite`](/frameworks/vite), Eleventy (planned)                            |
+| 4   | **Build-time / SSG**     | A build/transform step rewrites HTML files, no server                     | [`/vite`](/frameworks/vite), [`/eleventy`](/frameworks/eleventy)           |
 
 ## Support matrix
 
@@ -30,11 +30,11 @@ hook. The rows below have a dedicated page where one exists, and an inline snipp
 | Nuxt                                           |   1   | `./nuxt` on the Nitro `render:response` hook    | ✅ [Docs](/frameworks/nuxt) + example      |
 | SvelteKit                                      |   2   | `./sveltekit` `handle` → `transformPageChunk`   | ✅ [Docs](/frameworks/sveltekit) + example |
 | Vite (MPA / static HTML)                       |   4   | `./vite` `transformIndexHtml` plugin            | ✅ [Docs](/frameworks/vite) + example      |
+| Eleventy (11ty)                                |   4   | `./eleventy` `addTransform` hook                | ✅ [Docs](/frameworks/eleventy) + example  |
 | TanStack Start                                 |   1   | `./nuxt` adapter on Nitro's `render:response`   | 📝 Documented below                        |
 | SolidStart                                     |   1   | `./nuxt` adapter on Nitro's `render:response`   | 📝 Documented below                        |
 | Analog (Angular)                               |   1   | `./nuxt` adapter on Nitro's `render:response`   | 📝 Documented below                        |
 | Remix v3                                       |   ?   | Boundary not yet pinned                         | 🚧 Planned                                 |
-| Eleventy (11ty)                                |   4   | `addTransform` → `renderToString`               | 🚧 Planned                                 |
 | Next.js (App Router)                           |  1?   | `middleware.ts` (edge — needs a static catalog) | 🚧 Deferred                                |
 
 ::: tip The `./nuxt` adapter is Nitro-generic
@@ -88,8 +88,6 @@ an issue.
   document/response boundary needs to be pinned from the v3 docs before a snippet can be written that
   we'd stand behind; depending on what it exposes it will fall into shape 1 (Response) or shape 2
   (string).
-- **Eleventy (11ty)** — a build-time/SSG integration (shape 4): `addTransform` hands the output HTML
-  string directly to `renderToString`. Planned as the canonical SSG example.
 - **Next.js (App Router)** — the hardest fit: it streams RSC with no clean document-transform hook,
   pushing the work into `middleware.ts`, which runs on the edge and so needs a static catalog (no
   runtime FS). Deferred until there's concrete demand.

@@ -15,7 +15,7 @@ Full documentation lives at **<https://webtides.github.io/element-js-ssr-rendere
 
 - [Introduction & how it works](https://webtides.github.io/element-js-ssr-renderer/guide/introduction)
 - [Resolving components](https://webtides.github.io/element-js-ssr-renderer/resolving-components) — eager vs. lazy, multiple sources
-- [Framework integrations](https://webtides.github.io/element-js-ssr-renderer/frameworks/node) — Node/Express, Astro, SvelteKit, Nuxt, Vite
+- [Framework integrations](https://webtides.github.io/element-js-ssr-renderer/frameworks/) — Node/Express, Astro, SvelteKit, Nuxt, Vite, Eleventy
 - [API reference](https://webtides.github.io/element-js-ssr-renderer/api/)
 
 ## Install
@@ -58,7 +58,7 @@ serverless / edge win), compose multiple sources, or wire the renderer into a me
 ## Examples
 
 Runnable, self-contained apps per framework live under [`examples/`](./examples) (plain Node/Express,
-Astro, Nuxt, SvelteKit, and Vite). Each SSRs the same components to Declarative Shadow DOM and hydrates them in the browser,
+Astro, Nuxt, SvelteKit, Vite, and Eleventy). Each SSRs the same components to Declarative Shadow DOM and hydrates them in the browser,
 doubling as a copy-pasteable blueprint.
 
 ## License
