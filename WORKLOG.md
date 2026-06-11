@@ -21,6 +21,15 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-11 — Pinned the Remix v3 boundary (T-015.3; closes T-015.10)
+
+**Tasks:** T-015, T-015.3, T-015.10
+
+- Researched the Remix v3 SSR boundary against primary sources (api.remix.run, remix.run/blog/remix-3-beta-preview). Findings: Remix v3 is the **Preact-based ground-up rewrite** (not React Router 7), still in **beta/pre-release**, built entirely on Web Standards — routes are **Fetch controllers returning a `Response`**, and `remix/ui/server` exposes `renderToString()` (→ HTML string) + `renderToStream()` (streaming).
+- Pinned it as **primary shape 2** (render to string with Remix's `renderToString`, run through our `renderToString` — aliased to avoid the name clash — then `createHtmlResponse`), with **shape 1** as an alternative (wrap the `Response` in the Astro/Nuxt kernel). The streaming `renderToStream` path defers to the parked T-015.0 concern (buffer-to-done).
+- Documented in `docs/frameworks/index.md` as a **provisional** section + matrix row (shape 2/1): a snippet plus a prominent beta caveat (API names from the current beta docs may change; no example app for that reason) and the note that Remix's Preact fork passes hyphenated tags through to HTML so authored custom elements still appear in the rendered string. Did **not** fabricate certainty — flagged provisional rather than ✅.
+- This was the matrix's last open row, so **T-015.10 is now done**. Docs build green.
+
 ## 2026-06-11 — Vite `components` auto-resolution + dev-watch (T-015.9 done)
 
 **Tasks:** T-015, T-015.9
