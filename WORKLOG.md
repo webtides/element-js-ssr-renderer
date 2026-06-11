@@ -21,6 +21,14 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-11 — Framework support matrix page (T-015.10; closes T-015.2/.4/.5)
+
+**Tasks:** T-015, T-015.10, T-015.2, T-015.4, T-015.5
+
+- Added `docs/frameworks/index.md` — a Frameworks landing page with the **four-shapes** explainer table + a **support matrix** mapping each framework → shape → adapter/hook → status. Cashes in the [reframe](#2026-06-11-reframe-t-015-around-four-integration-shapes): same-shape frameworks are now documented instead of getting an example app each.
+- Documented the **Nitro family** (TanStack Start, SolidStart, Analog) off one shared `render:response` snippet, with the key insight called out: the `./nuxt` adapter is **Nitro-generic** (it only knows the hook + response shape, not Nuxt), so it works on any Nitro framework unchanged. Closes T-015.2/.4/.5. Remix v3 + Eleventy + Next listed honestly as planned/deferred with their blockers.
+- Wired into VitePress: nav "Frameworks" now points at `/frameworks/`, new "Overview & support matrix" sidebar item. `npm run docs:build` green — no dead links.
+
 ## 2026-06-11 — Reframe T-015 around four integration shapes
 
 **Tasks:** T-015

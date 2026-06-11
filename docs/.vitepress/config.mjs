@@ -18,7 +18,7 @@ export default defineConfig({
       { text: "Guide", link: "/guide/introduction" },
       { text: "Concepts", link: "/concepts/" },
       { text: "Resolving", link: "/resolving-components" },
-      { text: "Frameworks", link: "/frameworks/astro" },
+      { text: "Frameworks", link: "/frameworks/" },
       { text: "API", link: "/api/" },
     ],
 
@@ -47,6 +47,7 @@ export default defineConfig({
       {
         text: "Framework integrations",
         items: [
+          { text: "Overview & support matrix", link: "/frameworks/" },
           { text: "Node (Express / Connect)", link: "/frameworks/node" },
           { text: "Astro", link: "/frameworks/astro" },
           { text: "SvelteKit", link: "/frameworks/sveltekit" },
