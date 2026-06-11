@@ -21,6 +21,14 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-06-11 — Reframe T-015 around four integration shapes
+
+**Tasks:** T-015
+
+- Rewrote the framework epic around **integration shapes, not frameworks**. Adapters are ~10-line shims over the string→string `renderToString` engine and nearly free; **examples are the real cost** (full apps that rot), so coverage is now one canonical adapter + example per shape, with same-shape frameworks demoted to a docs matrix — the model already proven by `./node` covering the whole `(req,res,next)` server family from one adapter + docs. The four shapes: (1) Response in/out (Astro, Nuxt/Nitro), (2) HTML string in/out (SvelteKit), (3) Node `res` buffering (`./node`), (4) build-time/SSG (Vite, Eleventy).
+- **Parked T-015.0 (streaming)** indefinitely: narrow gain (only preserves streaming for streaming-first frameworks) vs highest cost; whole-document parse5 fights chunking, and the authored custom-element markup we transform lives in the static shell that flushes first — largely orthogonal to what streams. If ever needed, ship a documented "buffer-to-done" mode, not a chunk-safe transform. **Parked T-015.6 (Next.js)** — worst shape-fit (RSC, no document hook, edge middleware).
+- **Demoted T-015.2/.3/.4/.5** (TanStack/Remix v3/SolidStart/Analog) from "adapter+example+test each" to rows in a new **T-015.10 framework support matrix** (docs only). Kept T-015.7 (Eleventy/SSG — net-new shape 4) and T-015.9 (Vite resolution plugin — off the render-shape axis) as real work.
+
 ## 2026-06-10 — `./node` adapter lands with example + docs (T-015.1 done)
 
 **Tasks:** T-015, T-015.1
