@@ -25,6 +25,19 @@ import above the inlined DOM-shim side effect. Fix it with `vite.ssr.noExternal`
 `node --import @webtides/element-js-ssr-renderer/dom-shim …`.
 :::
 
+### What the shim provides
+
+Beyond the core (`HTMLElement`, `document`, `customElements`), the shim stubs the browser APIs real-world
+component files and their vendor libraries commonly touch at module scope or in constructors: `window`,
+`matchMedia`, `IntersectionObserver`/`ResizeObserver`/`MutationObserver`, `requestAnimationFrame`,
+`CSSStyleSheet`, `localStorage`/`sessionStorage`, `navigator`, `location`, and global/document event and
+query methods — so importing a real component library on the server works without a hand-rolled stub file.
+
+All stubs are **inert** (queries return `null`/empty, storage reads return `null`, media queries never
+match, `requestAnimationFrame` callbacks never fire) and installed only where the environment doesn't
+already provide the API — a real DOM (browser, happy-dom, jsdom) is never touched. Code needing real
+behavior from these APIs belongs behind `connected()` — it runs on the client only.
+
 ## On the client
 
 The renderer only produces markup. To make the pre-rendered elements upgrade and **hydrate**, import the

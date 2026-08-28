@@ -21,6 +21,15 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-08-28 — Broader dom-shim browser-API coverage (T-022, issue #6)
+
+**Tasks:** T-022
+
+- Fixed GH issue #6: importing real-world component libraries on the server no longer requires a hand-rolled stub file — the dom-shim now covers the browser APIs component/vendor modules commonly touch at module scope or in constructors: `window` alias, `matchMedia`, the three observers, `requestAnimationFrame`/`cancelAnimationFrame`, `CSSStyleSheet`, `localStorage`/`sessionStorage`, `navigator`, `location`, global event methods, and a wider `document` surface (queries, `createTextNode`, `documentElement`, `head`, `adoptedStyleSheets`, events).
+- Everything is inert and `??=`-guarded: real DOM environments (browser, happy-dom, jsdom) and newer Node globals (`navigator`) are never overridden; `window ??= globalThis` is installed last so `typeof window` browser-detection paths land on the stubs instead of ReferenceErrors.
+- Deliberate deviation from the issue: `requestAnimationFrame` is a **no-op**, not `setTimeout(cb, 0)` — element-js batches `update()` behind rAF, so an executing stub would run deferred updates against the shim after the response, surfacing errors as uncaught exceptions outside T-020's per-component isolation. SSR reads `template()` synchronously and never awaits a frame.
+- New `test/dom-shim.test.js` (+9 tests, suite at 96), including a render test proving rAF callbacks never fire during SSR; docs: installation (shim coverage note) + limitations.
+
 ## 2026-08-28 — ComponentConfig resolve values (T-021, issue #4)
 
 **Tasks:** T-021
