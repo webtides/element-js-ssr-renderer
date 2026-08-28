@@ -36,6 +36,32 @@ A **fully eager** catalog (every value a class) is the floor: zero tooling, work
 what the [quick start](/guide/quick-start) uses. A **lazy** catalog imports each component only when its tag
 is actually on the page — the cold-start / serverless / edge win.
 
+### Per-component SSR overrides: `ComponentConfig`
+
+A Catalog value can also be a [`ComponentConfig`](/api/#componentconfig) — an object wrapping the class (or
+lazy loader) with per-component SSR overrides, detected by its `component` key:
+
+```js
+await renderToString(html, {
+  resolve: {
+    "el-button": {
+      component: () => import("./components/el-button.js"),
+      // injected ahead of the component's own styles — into the DSD template for shadow
+      // components, inlined before the markup for light-DOM ones
+      styles: buttonUtilities, // string | string[]
+      // overrides the element-js instance option at render time
+      adoptGlobalStyles: false,
+    },
+  },
+});
+```
+
+This is the supported way to bake **build-time per-component CSS** into Declarative Shadow DOM — a minified
+Tailwind utility subset, critical CSS — so shadow content is styled at first paint without copying the full
+global sheets into every template, and without subclassing components to poke element-js internals
+(`_styles` / `_options`). Injected styles are emitted under a renderer-owned `TAGNAME-SSR{index}` id-space,
+so element-js' own `TAGNAME{index}` hydration ids and their client-side de-dup stay untouched.
+
 ### `import.meta.glob` is already a Catalog
 
 Vite's `import.meta.glob('./components/*.js')` returns `{ "./components/x.js": () => import(...) }` — a lazy

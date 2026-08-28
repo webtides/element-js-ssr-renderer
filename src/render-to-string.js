@@ -74,9 +74,11 @@ function backWithNode(instance, node) {
  *   side effects) are only computed when state transport is opted in.
  * @param {import('node-html-parser').HTMLElement} [node] - the parsed element this instance is
  *   rendered for; backs the instance's light-DOM introspection (see {@link backWithNode}).
- * @return {{ markup: string, shadow: boolean, styleEntries: {index: number, css: string}[], adoptGlobalStyles: boolean | string | string[], serializedState: object | undefined }}
+ * @param {ResolvedEntry} [entry] - the resolved catalog entry; its `injected` styles and
+ *   `adoptGlobalStyles` override come from a {@link ComponentConfig} (T-021).
+ * @return {{ markup: string, shadow: boolean, styleEntries: {index: number, css: string}[], injectedEntries: {index: number, css: string}[], adoptGlobalStyles: boolean | string | string[], serializedState: object | undefined }}
  */
-function renderComponent(Constructor, attributes, serialize, node) {
+function renderComponent(Constructor, attributes, serialize, node, entry) {
   const instance = new Constructor();
 
   // Wire the node in before `properties()` runs: in the browser, properties are collected at
@@ -116,8 +118,14 @@ function renderComponent(Constructor, attributes, serialize, node) {
     markup,
     shadow: Boolean(instance._options?.shadowRender),
     styleEntries,
-    // element-js default is `true`; mirror that so plain components adopt global styles.
-    adoptGlobalStyles: instance._options?.adoptGlobalStyles ?? true,
+    // Renderer-injected per-component styles from a ComponentConfig (T-021) — emitted ahead of the
+    // component's own styles, under a renderer-owned id-space so element-js' own `TAGNAME{index}`
+    // hydration ids stay untouched.
+    injectedEntries: entry?.injected ?? [],
+    // A ComponentConfig override wins over the instance option; element-js default is `true`, so
+    // plain components adopt global styles.
+    adoptGlobalStyles:
+      entry?.adoptGlobalStyles ?? instance._options?.adoptGlobalStyles ?? true,
     serializedState,
   };
 }
@@ -261,8 +269,8 @@ function isEmptyTemplate(markup) {
 
 /**
  * @typedef {Object} TransformContext
- * @property {Object<string, CustomElementConstructor>} resolved - tags resolved to their classes so
- *   far; the map this transform pass renders against (grows across the resolution fixpoint).
+ * @property {Object<string, ResolvedEntry>} resolved - tags resolved to their entries so far; the
+ *   map this transform pass renders against (grows across the resolution fixpoint).
  * @property {{ node: import('node-html-parser').HTMLElement, html: string }[]} globalStyles
  * @property {Set<string>} lightStyleIds - ids of light-DOM `<style>`s already emitted, document-wide
  * @property {(tag: string) => void} [onUnresolved] - called with each custom-element-looking tag
@@ -290,7 +298,8 @@ function transformNode(node, ctx) {
     if (child.nodeType !== NodeType.ELEMENT_NODE) continue;
 
     const tag = child.rawTagName?.toLowerCase();
-    const Constructor = tag ? ctx.resolved[tag] : undefined;
+    const entry = tag ? ctx.resolved[tag] : undefined;
+    const Constructor = entry?.Constructor;
 
     if (Constructor) {
       // Per-component error isolation (T-020): a throwing constructor / `properties()` /
@@ -304,6 +313,7 @@ function transformNode(node, ctx) {
           child.attributes ?? {},
           ctx.serializeState,
           child,
+          entry,
         );
       } catch (error) {
         ctx.onError?.(tag, error);
@@ -316,6 +326,7 @@ function transformNode(node, ctx) {
           markup,
           shadow,
           styleEntries,
+          injectedEntries,
           adoptGlobalStyles,
           serializedState,
         } = rendered;
@@ -350,7 +361,12 @@ function transformNode(node, ctx) {
           )
             .filter((html) => !seen.has(html) && seen.add(html))
             .join("");
-          const styleTags = ownStyleTags(styleEntries, idBase);
+          // Injected ComponentConfig styles sit between adopted globals and the component's own
+          // styles (more specific than globals, overridable by the component), under the
+          // renderer-owned `TAGNAME-SSR{index}` id-space (T-021).
+          const styleTags =
+            ownStyleTags(injectedEntries, `${idBase}-SSR`) +
+            ownStyleTags(styleEntries, idBase);
           const shadowFragment = parse(
             `<template shadowrootmode="open">${adopted}${styleTags}${markup}</template>`,
             PARSE_OPTIONS,
@@ -372,7 +388,9 @@ function transformNode(node, ctx) {
         // The component's own styles have no shadow root, so inline them (id'd like element-js)
         // ahead of the markup — but only once per id across the document, since light styles are
         // global and element-js de-dupes them by id on hydration anyway.
-        const styleTags = ownStyleTags(styleEntries, idBase, ctx.lightStyleIds);
+        const styleTags =
+          ownStyleTags(injectedEntries, `${idBase}-SSR`, ctx.lightStyleIds) +
+          ownStyleTags(styleEntries, idBase, ctx.lightStyleIds);
         const fragment = parse(styleTags + markup, PARSE_OPTIONS);
         transformNode(fragment, ctx);
         for (const fragmentChild of fragment.childNodes)
@@ -455,7 +473,7 @@ function defaultErrorReport(tag, error) {
  * (`html`, `resolved`), so the resolution fixpoint can call it repeatedly with a growing map of
  * resolved tags (see {@link renderToString}).
  * @param {string} html
- * @param {Object<string, CustomElementConstructor>} resolved - tags already resolved to their classes
+ * @param {Object<string, ResolvedEntry>} resolved - tags already resolved to their entries
  * @param {(tag: string) => void} [onUnresolved]
  * @param {boolean} [serializeState] - opt into client state transport (T-007)
  * @param {(tag: string, error: Error) => void} [onError] - render-error recorder (T-020)
@@ -496,7 +514,31 @@ function runTransform(html, resolved, onUnresolved, serializeState, onError) {
  *   - **tag key vs path key** — a custom-element tag can't contain `/`, but an `import.meta.glob` key
  *     always does, so a `/`-bearing key is read as a module path and mapped to a tag by basename
  *     (`./components/el-button.js` → `el-button`). A resolved loader module has its `default` picked.
- * @typedef {Object<string, CustomElementConstructor | (() => Promise<unknown>)>} Catalog
+ *   - a value may also be a **{@link ComponentConfig}** — an object wrapping the class or loader
+ *     with per-component SSR overrides (injected styles, `adoptGlobalStyles`), detected by its
+ *     `component` key.
+ * @typedef {Object<string, CustomElementConstructor | (() => Promise<unknown>) | ComponentConfig>} Catalog
+ */
+
+/**
+ * A **`ComponentConfig`** wraps a {@link Catalog} value with per-component SSR overrides (T-021) —
+ * the supported alternative to subclassing and poking element-js internals (`_styles`/`_options`):
+ *   - **`component`** — the eager class or lazy loader, exactly like a bare Catalog value.
+ *   - **`styles`** — CSS injected ahead of the component's own styles: into the Declarative Shadow
+ *     DOM template (after adopted globals) for shadow components, inlined before the markup for
+ *     light-DOM ones. The build-time critical-CSS / per-component Tailwind-subset hook: DSD content
+ *     is styled at first paint without copying the full global sheets into every template. Emitted
+ *     under a renderer-owned `TAGNAME-SSR{index}` id-space so element-js' own `TAGNAME{index}`
+ *     hydration ids (and their client-side de-dup) stay untouched.
+ *   - **`adoptGlobalStyles`** — overrides the instance's element-js option at render time.
+ * The key is `component` — deliberately not `constructor`, which every plain object already
+ * resolves through its prototype chain, making detection (and forgetting the key) ambiguous.
+ * @typedef {{ component: CustomElementConstructor | (() => Promise<unknown>), styles?: string | string[], adoptGlobalStyles?: boolean | string | string[] }} ComponentConfig
+ */
+
+/**
+ * The uniform shape the transform renders against, normalized from whatever a source yielded.
+ * @typedef {{ Constructor: CustomElementConstructor, injected?: {index: number, css: string}[], adoptGlobalStyles?: boolean | string | string[] }} ResolvedEntry
  */
 
 /** Default key→tag mapping: a path's basename without extension (`./x/el-button.js` → `el-button`). */
@@ -527,6 +569,53 @@ function isElementClass(value) {
 }
 
 /**
+ * Whether a `resolve` value is a {@link ComponentConfig} — a plain object carrying the component
+ * plus per-component SSR overrides — rather than a bare class or loader thunk. Keyed on `component`
+ * being an OWN property: prototype-chain lookups would make `{}.constructor` (→ `Object`) a false
+ * positive, which is exactly why the key isn't named `constructor`.
+ * @param {*} value
+ * @return {value is ComponentConfig}
+ */
+function isComponentConfig(value) {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    Object.hasOwn(value, "component")
+  );
+}
+
+/**
+ * Normalize what a source yielded — a bare class or a {@link ComponentConfig} (whose `component`
+ * may still be a lazy loader, e.g. when returned from a custom resolver function) — into the
+ * uniform {@link ResolvedEntry} the transform renders against. A config whose `component` doesn't
+ * resolve to an element class is a programming error and throws, naming the tag; any other
+ * unrecognized value resolves to `undefined` (→ the unresolved-tag path).
+ * @param {*} value
+ * @param {string} tag
+ * @return {Promise<ResolvedEntry | undefined>}
+ */
+async function toResolvedEntry(value, tag) {
+  if (value == null) return undefined;
+  if (isElementClass(value)) return { Constructor: value };
+  if (isComponentConfig(value)) {
+    let { component, styles, adoptGlobalStyles } = value;
+    if (typeof component === "function" && !isElementClass(component))
+      component = defaultPick(await component());
+    if (!isElementClass(component))
+      throw new TypeError(
+        `[element-js-ssr-renderer] resolve entry for <${tag}> has a \`component\` ` +
+          `that is not (and does not resolve to) a custom-element class`,
+      );
+    // Pre-shape injected CSS like style entries, so emission mirrors the component's own styles.
+    const injected = (typeof styles === "string" ? [styles] : (styles ?? []))
+      .map((css, index) => ({ index, css }))
+      .filter(({ css }) => Boolean(css));
+    return { Constructor: component, injected, adoptGlobalStyles };
+  }
+  return undefined;
+}
+
+/**
  * Normalize one {@link Catalog} into a uniform `(tag) => class | Promise<class> | undefined` resolver,
  * auto-detecting each entry: class keys resolve to the class directly; loader keys import on demand
  * (each module at most once) and pick the module's `default`. Path keys (containing `/`) map to a tag
@@ -539,11 +628,31 @@ function catalogToResolver(catalog) {
   for (const [key, value] of Object.entries(catalog))
     entries.set(key.includes("/") ? defaultPathToTag(key) : key, value);
 
-  const cache = new Map(); // tag -> Promise<class>, so each lazy module imports once
+  const cache = new Map(); // tag -> Promise<class | config>, so each lazy module imports once
   return (tag) => {
     const value = entries.get(tag);
     if (value === undefined) return undefined;
     if (isElementClass(value)) return value;
+    // A ComponentConfig passes through with its `component` resolved (lazy loaders cached like
+    // bare ones); normalization into a ResolvedEntry happens in renderToString (T-021).
+    if (isComponentConfig(value)) {
+      // Only a non-class function is a lazy loader; anything else (an eager class, or an invalid
+      // value that toResolvedEntry rejects with a clear error) passes through as-is.
+      if (
+        typeof value.component !== "function" ||
+        isElementClass(value.component)
+      )
+        return value;
+      if (!cache.has(tag))
+        cache.set(
+          tag,
+          Promise.resolve(value.component()).then((mod) => ({
+            ...value,
+            component: defaultPick(mod),
+          })),
+        );
+      return cache.get(tag);
+    }
     if (!cache.has(tag))
       cache.set(tag, Promise.resolve(value()).then(defaultPick));
     return cache.get(tag);
@@ -649,8 +758,9 @@ function composeSources(sources) {
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  * }} [options]
- *   `resolve` is a {@link Catalog} (a `{ tag: Class }` / `import.meta.glob()` map, eager classes and
- *   lazy loaders auto-detected) or a `(tag) => …` resolver function — or an array of either, composed
+ *   `resolve` is a {@link Catalog} (a `{ tag: Class }` / `import.meta.glob()` map, eager classes,
+ *   lazy loaders and {@link ComponentConfig} objects auto-detected) or a `(tag) => …` resolver
+ *   function — or an array of either, composed
  *   later-wins on a tag clash. `onUnresolved` is called once per custom-element tag that no source
  *   could resolve; it defaults to a dev-only warning (pass `() => {}` to silence). `onError` is
  *   called once per tag whose component threw while rendering; it defaults to a `console.error`
@@ -699,8 +809,8 @@ export async function renderToString(
     for (const tag of fresh) attempted.add(tag);
     await Promise.all(
       fresh.map(async (tag) => {
-        const cls = await resolver(tag);
-        if (cls) resolved[tag] = cls;
+        const entry = await toResolvedEntry(await resolver(tag), tag);
+        if (entry) resolved[tag] = entry;
       }),
     );
   }

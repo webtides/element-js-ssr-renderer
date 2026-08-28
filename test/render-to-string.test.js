@@ -427,6 +427,117 @@ describe("unresolved-tag warning (dev)", () => {
   });
 });
 
+// A ComponentConfig catalog value wraps the class with per-component SSR overrides — injected
+// styles and an adoptGlobalStyles override — without poking element-js internals (T-021, issue #4).
+class ShadowCard extends TemplateElement {
+  constructor() {
+    super({ shadowRender: true, styles: [".own { color: red; }"] });
+  }
+  template() {
+    return html`<div class="card"><slot></slot></div>`;
+  }
+}
+class LightNote extends TemplateElement {
+  constructor() {
+    super({ styles: [".note { color: blue; }"] });
+  }
+  template() {
+    return html`<p class="note">note</p>`;
+  }
+}
+
+describe("ComponentConfig resolve values", () => {
+  it("injects config styles into the DSD template, ahead of the component's own styles", async () => {
+    const out = await renderToString("<x-card>hi</x-card>", {
+      resolve: {
+        "x-card": { component: ShadowCard, styles: ".util { margin: 0; }" },
+      },
+    });
+    const shadow = shadowOf(out);
+    expect(shadow).toContain(
+      '<style id="X-CARD-SSR0">.util { margin: 0; }</style>',
+    );
+    // the component's own style keeps its untouched element-js hydration id
+    expect(shadow).toContain(
+      '<style id="X-CARD0">.own { color: red; }</style>',
+    );
+    expect(shadow.indexOf("X-CARD-SSR0")).toBeLessThan(
+      shadow.indexOf("X-CARD0"),
+    );
+  });
+
+  it("lets the config override adoptGlobalStyles at render time", async () => {
+    const doc =
+      "<html><head><style>.global {}</style></head><body><x-card>hi</x-card></body></html>";
+    const withGlobals = await renderToString(doc, {
+      resolve: { "x-card": ShadowCard },
+    });
+    expect(shadowOf(withGlobals)).toContain(".global {}");
+
+    const withoutGlobals = await renderToString(doc, {
+      resolve: {
+        "x-card": { component: ShadowCard, adoptGlobalStyles: false },
+      },
+    });
+    expect(shadowOf(withoutGlobals)).not.toContain(".global {}");
+  });
+
+  it("accepts an array of styles and keeps their order", async () => {
+    const out = await renderToString("<x-card>hi</x-card>", {
+      resolve: {
+        "x-card": { component: ShadowCard, styles: [".a {}", ".b {}"] },
+      },
+    });
+    const shadow = shadowOf(out);
+    expect(shadow).toContain('<style id="X-CARD-SSR0">.a {}</style>');
+    expect(shadow).toContain('<style id="X-CARD-SSR1">.b {}</style>');
+  });
+
+  it("inlines injected styles for light-DOM components, once across instances", async () => {
+    const out = await renderToString("<x-note></x-note><x-note></x-note>", {
+      resolve: {
+        "x-note": { component: LightNote, styles: ".crit {}" },
+      },
+    });
+    expect(out.match(/id="X-NOTE-SSR0"/g)?.length).toBe(1);
+    expect(out.match(/id="X-NOTE0"/g)?.length).toBe(1);
+  });
+
+  it("supports a lazy loader as the config's component", async () => {
+    const importer = vi.fn(() => Promise.resolve({ default: ShadowCard }));
+    const out = await renderToString("<x-card>a</x-card><x-card>b</x-card>", {
+      resolve: {
+        "x-card": { component: importer, styles: ".lazy {}" },
+      },
+    });
+    expect(importer).toHaveBeenCalledTimes(1);
+    expect(out).toContain(".lazy {}");
+    expect(out.match(/shadowrootmode/g)?.length).toBe(2);
+  });
+
+  it("accepts a config returned from a resolver function", async () => {
+    const out = await renderToString("<x-card>hi</x-card>", {
+      resolve: (tag) =>
+        tag === "x-card"
+          ? {
+              component: ShadowCard,
+              adoptGlobalStyles: false,
+              styles: ".fn {}",
+            }
+          : undefined,
+    });
+    expect(shadowOf(out)).toContain(".fn {}");
+  });
+
+  it("throws a clear error when component is missing or not a class", async () => {
+    await expect(
+      renderToString("<x-card></x-card>", {
+        resolve: { "x-card": { styles: ".oops {}", component: {} } },
+      }),
+    ).rejects.toThrow(/<x-card>.*component/s);
+  });
+});
+
 // Components that throw at each stage `renderComponent` runs — the page must survive all of them
 // with the failing element left untouched (T-020, issue #3).
 class ThrowingTemplate extends TemplateElement {

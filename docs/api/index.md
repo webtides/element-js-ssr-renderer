@@ -98,7 +98,10 @@ options?: {
 
 ```ts
 type Catalog = {
-  [tag: string]: CustomElementConstructor | (() => Promise<unknown>);
+  [tag: string]:
+    | CustomElementConstructor
+    | (() => Promise<unknown>)
+    | ComponentConfig;
 };
 ```
 
@@ -112,6 +115,32 @@ catalog **and** raw `import.meta.glob()` output both drop straight into `resolve
 - **tag key vs path key** — a custom-element tag can't contain `/`, but an `import.meta.glob` key always
   does, so a `/`-bearing key is read as a module path and mapped to a tag by basename
   (`./components/el-button.js` → `el-button`). A resolved loader module has its `default` picked.
+- a value may also be a [`ComponentConfig`](#componentconfig) — an object wrapping the class or loader with
+  per-component SSR overrides, detected by its `component` key.
+
+### `ComponentConfig`
+
+```ts
+type ComponentConfig = {
+  component: CustomElementConstructor | (() => Promise<unknown>);
+  styles?: string | string[];
+  adoptGlobalStyles?: boolean | string | string[];
+};
+```
+
+Wraps a Catalog value with per-component SSR overrides — the supported alternative to subclassing a
+component and poking element-js internals (`_styles` / `_options`). Also valid as a
+[resolver function's](#resolvefn) return value.
+
+| Field               | Description                                                                                                                                                                                                                                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `component`         | The eager class or lazy loader, exactly like a bare Catalog value. The key is deliberately **not** `constructor` — every plain object already resolves `constructor` through its prototype chain, which would make detection (and a forgotten key) ambiguous.                                                              |
+| `styles`            | CSS injected **ahead of the component's own styles**: into the Declarative Shadow DOM template (after adopted globals) for shadow components, inlined before the markup for light-DOM ones. The hook for build-time per-component CSS (Tailwind utility subsets, critical CSS), styling DSD content at first paint.       |
+| `adoptGlobalStyles` | Overrides the instance's element-js option at render time (`true` \| `false` \| selector \| selectors).                                                                                                                                                                                                                 |
+
+Injected styles are emitted under a renderer-owned `TAGNAME-SSR{index}` id-space (e.g. `EL-BUTTON-SSR0`), so
+element-js' own `TAGNAME{index}` hydration ids — and their client-side de-dup — stay untouched. For light-DOM
+components they de-dupe document-wide across instances, like own styles.
 
 ### `ResolveFn`
 

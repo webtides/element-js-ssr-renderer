@@ -21,6 +21,16 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-08-28 — ComponentConfig resolve values (T-021, issue #4)
+
+**Tasks:** T-021
+
+- Fixed GH issue #4: consumers no longer need to subclass components and poke element-js internals (`_styles`/`_options`) to bake build-time per-component CSS into DSD templates or override `adoptGlobalStyles` at render time. A Catalog value (or resolver-fn return) may now be a **`ComponentConfig`**: `{ component, styles?, adoptGlobalStyles? }` — the issue's preferred variant 1 (declarative) over the `prepareInstance` hook, which would still leak the internals contract.
+- Key is `component`, deliberately not the issue's proposed `constructor`: every plain object resolves `constructor` through its prototype chain (→ `Object`), so detection — and a forgotten key — would be ambiguous. Detection uses `Object.hasOwn`.
+- Injected `styles` are emitted ahead of the component's own styles (shadow: after adopted globals inside the DSD template; light DOM: inlined, de-duped document-wide) under a **renderer-owned `TAGNAME-SSR{index}` id-space** — a naive prepend into `_styles` (the issue's workaround) would shift element-js' `TAGNAME{index}` hydration ids and break client-side style de-dup.
+- Lazy `component` loaders are cached per tag like bare loader values; a `component` that doesn't resolve to an element class throws a `TypeError` naming the tag (a programming error, not isolated by T-020's render-error handling).
+- +7 tests (`ComponentConfig resolve values`); suite green at **87**. Docs: API reference `ComponentConfig` type section + Catalog updates, resolving-components "Per-component SSR overrides" section.
+
 ## 2026-08-28 — Per-component error isolation (T-020, issue #3)
 
 **Tasks:** T-020
