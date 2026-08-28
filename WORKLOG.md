@@ -21,6 +21,13 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-08-28 — Release 0.2.0
+
+**Tasks:** T-019, T-020, T-021, T-022, T-023, T-024
+
+- Released 0.2.0: all six issues from the first production integrations (#1–#6) in one minor release; added `CHANGELOG.md` (also back-filling 0.1.0).
+- Release flow: version bump on `main`, tag `v0.2.0` — the `npm-publish.yml` workflow tests, publishes to npm via OIDC trusted publishing, and creates the GitHub Release with generated notes.
+
 ## 2026-08-28 — Catalog generator: recursive mode + `tag` hook (T-024, issue #5)
 
 **Tasks:** T-024
