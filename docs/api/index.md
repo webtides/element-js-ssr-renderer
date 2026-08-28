@@ -14,6 +14,7 @@ renderToString(
   html: string,
   options?: {
     resolve?: Catalog | ResolveFn | Array<Catalog | ResolveFn>,
+    exclude?: string[] | ((tag: string) => boolean),
     onUnresolved?: (tag: string) => void,
     onError?: (tag: string, error: Error) => void,
     serializeState?: boolean,
@@ -25,6 +26,7 @@ renderToString(
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `html`                   | An HTML document or fragment (e.g. a framework's rendered response).                                                                                                                                   |
 | `options.resolve`        | A [`Catalog`](#catalog) (a `{ tag: … }` map of eager classes and/or lazy loaders, auto-detected) or a [resolver function](#resolvefn) — or an array of either, composed **later-wins** on a tag clash. |
+| `options.exclude`        | Tags to leave client-only: a list (case-insensitive) or a `(tag) => boolean` predicate. See [below](#exclude).                                                                                         |
 | `options.onUnresolved`   | Called once per custom-element-looking tag (contains `-`) that no source resolves. See [below](#onunresolved).                                                                                         |
 | `options.onError`        | Called once per tag whose component threw while rendering; the element is left untouched. See [below](#onerror).                                                                                       |
 | `options.serializeState` | Opt into [client state transport](#serializestate). Defaults to `false`.                                                                                                                               |
@@ -80,6 +82,7 @@ elementSSR(options?): handle hook (transformPageChunk)
 ```ts
 options?: {
   resolve?: Catalog | ResolveFn | Array<Catalog | ResolveFn>,
+  exclude?: string[] | ((tag: string) => boolean),
   onUnresolved?: (tag: string) => void,
   onError?: (tag: string, error: Error) => void,
   serializeState?: boolean,
@@ -99,9 +102,7 @@ options?: {
 ```ts
 type Catalog = {
   [tag: string]:
-    | CustomElementConstructor
-    | (() => Promise<unknown>)
-    | ComponentConfig;
+    CustomElementConstructor | (() => Promise<unknown>) | ComponentConfig;
 };
 ```
 
@@ -132,11 +133,11 @@ Wraps a Catalog value with per-component SSR overrides — the supported alterna
 component and poking element-js internals (`_styles` / `_options`). Also valid as a
 [resolver function's](#resolvefn) return value.
 
-| Field               | Description                                                                                                                                                                                                                                                                                                              |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `component`         | The eager class or lazy loader, exactly like a bare Catalog value. The key is deliberately **not** `constructor` — every plain object already resolves `constructor` through its prototype chain, which would make detection (and a forgotten key) ambiguous.                                                              |
-| `styles`            | CSS injected **ahead of the component's own styles**: into the Declarative Shadow DOM template (after adopted globals) for shadow components, inlined before the markup for light-DOM ones. The hook for build-time per-component CSS (Tailwind utility subsets, critical CSS), styling DSD content at first paint.       |
-| `adoptGlobalStyles` | Overrides the instance's element-js option at render time (`true` \| `false` \| selector \| selectors).                                                                                                                                                                                                                 |
+| Field               | Description                                                                                                                                                                                                                                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `component`         | The eager class or lazy loader, exactly like a bare Catalog value. The key is deliberately **not** `constructor` — every plain object already resolves `constructor` through its prototype chain, which would make detection (and a forgotten key) ambiguous.                                                       |
+| `styles`            | CSS injected **ahead of the component's own styles**: into the Declarative Shadow DOM template (after adopted globals) for shadow components, inlined before the markup for light-DOM ones. The hook for build-time per-component CSS (Tailwind utility subsets, critical CSS), styling DSD content at first paint. |
+| `adoptGlobalStyles` | Overrides the instance's element-js option at render time (`true` \| `false` \| selector \| selectors).                                                                                                                                                                                                             |
 
 Injected styles are emitted under a renderer-owned `TAGNAME-SSR{index}` id-space (e.g. `EL-BUTTON-SSR0`), so
 element-js' own `TAGNAME{index}` hydration ids — and their client-side de-dup — stay untouched. For light-DOM
@@ -157,12 +158,35 @@ Arbitrary tag → class resolution, sync or async — the function form `resolve
 [`glob`](#glob-map-options) returns), for when a plain `Catalog` doesn't fit: a custom convention, a remote
 lookup, etc.
 
+### `exclude`
+
+`string[] | ((tag: string) => boolean)`. Declares tags as **client-only** — overlays like modals or
+cookie-consent banners whose content must stay inert until their JS runs. An excluded tag is treated as
+unresolved-by-choice: the element is left untouched (its authored markup survives and the component still
+upgrades client-side), and `onUnresolved` is **not** called — it's intentional, not a miss.
+
+Exclusion is checked **before** resolution, so an excluded tag's module is never resolved or imported on the
+server — even when the tag is present in `resolve`. Module-scope side effects of client-only components never
+run. A list matches tags case-insensitively; a predicate receives the lower-cased tag (e.g.
+`(tag) => tag.startsWith("overlay-")`).
+
+```js
+await renderToString(html, {
+  resolve: catalog,
+  exclude: ["my-modal", "cookie-consent"],
+});
+```
+
+The decision deliberately lives here — outside the component — not as a flag on the class: where a component
+renders is its environment's call, and the renderer never has to load the module just to find out.
+
 ### `onUnresolved`
 
 `(tag: string) => void`, called for each custom-element-looking tag (contains `-`) that no source resolves.
 The default handler warns once per distinct tag in non-production only (`NODE_ENV`-gated, edge-safe), to
 catch a forgotten source or a typo; it is silent in production. Pass your own to handle it, or `() => {}` to
-silence it for intentionally client-only / third-party tags.
+silence it wholesale. For intentionally client-only tags, prefer [`exclude`](#exclude) — it silences only
+those tags and keeps the warning for genuine misses.
 
 ### `onError`
 

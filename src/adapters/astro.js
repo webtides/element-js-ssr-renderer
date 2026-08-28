@@ -51,6 +51,7 @@ import { transformHtmlResponse } from "./transform-response.js";
  * @param {{
  *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
+ *   exclude?: string[] | ((tag: string) => boolean),
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  * }} [options]
@@ -59,6 +60,7 @@ import { transformHtmlResponse } from "./transform-response.js";
 export function elementSSR({
   resolve,
   onUnresolved,
+  exclude,
   onError,
   serializeState = false,
 } = {}) {
@@ -66,6 +68,7 @@ export function elementSSR({
     const response = await next();
     return transformHtmlResponse(response, {
       resolve,
+      exclude,
       onUnresolved,
       onError,
       serializeState,

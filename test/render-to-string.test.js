@@ -755,3 +755,66 @@ describe("state transport (serializeState)", () => {
     expect(out.match(/"items":2/g)?.length).toBe(1);
   });
 });
+
+describe("excluding tags from SSR (exclude)", () => {
+  class Modal extends TemplateElement {
+    template() {
+      return html`<p>server-rendered modal</p>`;
+    }
+  }
+
+  it("leaves an excluded tag untouched while siblings still render", async () => {
+    const out = await renderToString(
+      "<x-modal><p>authored</p></x-modal><el-button>ok</el-button>",
+      { resolve: { "x-modal": Modal, "el-button": Button }, exclude: ["x-modal"] },
+    );
+    // unresolved-by-choice: authored markup survives, nothing server-rendered
+    expect(out).toContain("<x-modal><p>authored</p></x-modal>");
+    expect(out).not.toContain("server-rendered modal");
+    // the non-excluded sibling still pre-renders
+    expect(out).toContain('<template shadowrootmode="open">');
+  });
+
+  it("does not report an excluded tag as unresolved", async () => {
+    const onUnresolved = vi.fn();
+    await renderToString("<x-modal></x-modal><x-unknown></x-unknown>", {
+      exclude: ["x-modal"],
+      onUnresolved,
+    });
+    // the genuinely unknown tag is still reported; the excluded one is intentional
+    expect(onUnresolved).toHaveBeenCalledWith("x-unknown");
+    expect(onUnresolved).not.toHaveBeenCalledWith("x-modal");
+  });
+
+  it("never resolves or imports an excluded tag's module", async () => {
+    const importer = vi.fn(() => Promise.resolve({ default: Modal }));
+    const out = await renderToString("<x-modal></x-modal>", {
+      resolve: { "x-modal": importer },
+      exclude: ["x-modal"],
+      onUnresolved: () => {},
+    });
+    expect(importer).not.toHaveBeenCalled();
+    expect(out).toContain("<x-modal></x-modal>");
+  });
+
+  it("accepts a predicate", async () => {
+    const out = await renderToString(
+      "<x-modal>a</x-modal><el-button>ok</el-button>",
+      {
+        resolve: { "x-modal": Modal, "el-button": Button },
+        exclude: (tag) => tag.endsWith("-modal"),
+      },
+    );
+    expect(out).toContain("<x-modal>a</x-modal>");
+    expect(out).toContain('<template shadowrootmode="open">');
+  });
+
+  it("matches listed tags case-insensitively", async () => {
+    const out = await renderToString("<x-modal>a</x-modal>", {
+      resolve: { "x-modal": Modal },
+      exclude: ["X-Modal"],
+    });
+    expect(out).toContain("<x-modal>a</x-modal>");
+    expect(out).not.toContain("server-rendered modal");
+  });
+});

@@ -100,6 +100,7 @@ function isInside(dir, file) {
  *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   components?: string,
  *   onUnresolved?: (tag: string) => void,
+ *   exclude?: string[] | ((tag: string) => boolean),
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  * }} [options]
@@ -109,6 +110,7 @@ export function elementSSR({
   resolve,
   components,
   onUnresolved,
+  exclude,
   onError,
   serializeState = false,
 } = {}) {
@@ -177,6 +179,7 @@ export function elementSSR({
       handler: (html) =>
         renderToString(html, {
           resolve: resolveSources(),
+          exclude,
           onUnresolved,
           onError,
           serializeState,

@@ -21,6 +21,14 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-08-28 — `exclude` option: client-only tags declared from outside (T-023, issue #2)
+
+**Tasks:** T-023
+
+- Fixed GH issue #2, but not with the proposed `static ssrDisabled` class flag: where a component renders is its environment's decision, not the component's — so the declaration lives in the render options instead. `renderToString` and all six adapters accept `exclude: string[] | ((tag) => boolean)`.
+- Excluded tags are unresolved-by-choice: element untouched, no `onUnresolved`, and — the advantage the class flag could never have — the filter runs **before** resolution, so the module is never imported on the server (a flag is only readable after the import; module-scope side effects of client-only components never run).
+- Lists match case-insensitively; predicates receive the lower-cased tag. +5 tests (suite at 101); docs: API `exclude` section, `onUnresolved` now points client-only cases at it.
+
 ## 2026-08-28 — Broader dom-shim browser-API coverage (T-022, issue #6)
 
 **Tasks:** T-022

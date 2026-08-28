@@ -47,6 +47,7 @@ import { renderToString } from "../render-to-string.js";
  * @param {{
  *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
+ *   exclude?: string[] | ((tag: string) => boolean),
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  * }} [options]
@@ -55,10 +56,11 @@ import { renderToString } from "../render-to-string.js";
 export function elementSSR({
   resolve,
   onUnresolved,
+  exclude,
   onError,
   serializeState = false,
 } = {}) {
-  const options = { resolve, onUnresolved, onError, serializeState };
+  const options = { resolve, exclude, onUnresolved, onError, serializeState };
 
   return (req, res, next) => {
     const originalWrite = res.write;

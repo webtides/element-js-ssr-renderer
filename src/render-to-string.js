@@ -453,6 +453,20 @@ function defaultUnresolvedWarning() {
 }
 
 /**
+ * Normalize the `exclude` option — a list of tags or a predicate — into a `(tag) => boolean`
+ * filter (T-023). List entries are matched case-insensitively (the transform lower-cases tag
+ * names); a predicate receives the lower-cased tag.
+ * @param {string[] | ((tag: string) => boolean) | undefined} exclude
+ * @return {(tag: string) => boolean}
+ */
+function toExcludeFilter(exclude) {
+  if (exclude == null) return () => false;
+  if (typeof exclude === "function") return (tag) => Boolean(exclude(tag));
+  const tags = new Set(exclude.map((tag) => tag.toLowerCase()));
+  return (tag) => tags.has(tag);
+}
+
+/**
  * The default `onError` handler: log each failing tag's error via `console.error`. Unlike the
  * unresolved-tag warning this is NOT dev-only — with the element silently left unrendered, a log
  * line is the only trace a production page has of the failure. Pass your own `onError` to route it
@@ -751,9 +765,16 @@ function composeSources(sources) {
  * survives and can still hydrate client-side — and `onError` is called once per failing tag
  * (default: a `console.error`). To fail fast instead, rethrow from your own `onError` (T-020).
  *
+ * `exclude` declares tags as **client-only** (T-023): overlays like modals or cookie-consent
+ * banners that must stay inert until their JS runs. An excluded tag is unresolved-by-choice — the
+ * element is left untouched, `onUnresolved` is not called, and, because exclusion is checked
+ * before resolution, its module is never resolved or imported on the server (even when the tag is
+ * present in `resolve`). Module-scope side effects of client-only components never run.
+ *
  * @param {string} html - an HTML document or fragment (e.g. a framework's rendered response)
  * @param {{
  *   resolve?: Catalog | ((tag: string) => *) | Array<Catalog | ((tag: string) => *)>,
+ *   exclude?: string[] | ((tag: string) => boolean),
  *   onUnresolved?: (tag: string) => void,
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
@@ -761,21 +782,24 @@ function composeSources(sources) {
  *   `resolve` is a {@link Catalog} (a `{ tag: Class }` / `import.meta.glob()` map, eager classes,
  *   lazy loaders and {@link ComponentConfig} objects auto-detected) or a `(tag) => …` resolver
  *   function — or an array of either, composed
- *   later-wins on a tag clash. `onUnresolved` is called once per custom-element tag that no source
- *   could resolve; it defaults to a dev-only warning (pass `() => {}` to silence). `onError` is
- *   called once per tag whose component threw while rendering; it defaults to a `console.error`
- *   (not dev-only), and rethrowing from it fails the whole render. `serializeState`
- *   (default `false`) opts into client state transport.
+ *   later-wins on a tag clash. `exclude` is a list of tags (case-insensitive) or a
+ *   `(tag) => boolean` predicate declaring tags client-only: left untouched, never resolved or
+ *   imported, no unresolved warning. `onUnresolved` is called once per custom-element tag that no
+ *   source could resolve; it defaults to a dev-only warning (pass `() => {}` to silence).
+ *   `onError` is called once per tag whose component threw while rendering; it defaults to a
+ *   `console.error` (not dev-only), and rethrowing from it fails the whole render.
+ *   `serializeState` (default `false`) opts into client state transport.
  * @return {Promise<string>} the HTML with custom elements pre-rendered
  */
 export async function renderToString(
   html,
-  { resolve, onUnresolved, onError, serializeState = false } = {},
+  { resolve, exclude, onUnresolved, onError, serializeState = false } = {},
 ) {
   setSerializeStateConfig(serializeState);
   const sources =
     resolve == null ? [] : Array.isArray(resolve) ? resolve : [resolve];
   const resolver = composeSources(sources);
+  const excluded = toExcludeFilter(exclude);
   const warn = onUnresolved ?? defaultUnresolvedWarning();
   const reportError = onError ?? defaultErrorReport;
 
@@ -791,7 +815,11 @@ export async function renderToString(
     const out = runTransform(
       html,
       resolved,
-      (tag) => misses.add(tag),
+      // Excluded tags (T-023) never enter the miss set: they are unresolved-by-choice, so they are
+      // neither resolved/imported below nor warned about at convergence.
+      (tag) => {
+        if (!excluded(tag)) misses.add(tag);
+      },
       serializeState,
       (tag, error) => {
         if (!errors.has(tag)) errors.set(tag, error);
