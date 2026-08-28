@@ -21,6 +21,15 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-08-28 — Light-DOM introspection during SSR (T-019, issue #1)
+
+**Tasks:** T-019
+
+- Fixed GH issue #1: `renderComponent` constructed the instance with no connection to the parsed node, so any `template()` deriving markup from its authored light DOM (`this.children`, `this.innerHTML`, `this.querySelector(…)`, `this.getAttribute(…)`) rendered differently on the server than in the browser.
+- `transformNode` now passes the node-html-parser element into `renderComponent`, and a new `backWithNode()` backs the instance's DOM-introspection surface with it: `children`/`childNodes`/`childElementCount`/`firstElementChild`/`lastElementChild`, `innerHTML`/`textContent` (getters), `querySelector(All)`, `getAttribute` (normalized to `null`)/`hasAttribute`.
+- Adapted, not copied, from the issue's production patch: the backing installs **before** `properties()` runs (in the browser, properties are collected at upgrade time with children/attributes present), `hasAttribute` delegates directly instead of via `getAttribute != null`, and `childNodes`/`lastElementChild` round out the surface.
+- +5 tests (`light-DOM introspection during SSR`: slider bullet counting, textContent re-slot, query/attribute reads, browser-like fallbacks, attribute-reading `properties()`); suite green at **74**. Docs: concepts info box + limitations updated (introspection is read-only, parsed-HTML nodes not live Elements).
+
 ## 2026-06-11 — Pinned the Remix v3 boundary (T-015.3; closes T-015.10)
 
 **Tasks:** T-015, T-015.3, T-015.10

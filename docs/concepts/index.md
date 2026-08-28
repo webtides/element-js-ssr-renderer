@@ -65,9 +65,13 @@ reactive state without throwing away and re-creating the markup. The result: no 
 content between server paint and client hydration.
 
 ::: info No lifecycle on the server
-Only `template()` runs on the server, purely from properties. `connected()`, watchers, effects, and DOM
-measurement do not. A component whose initial markup depends on runtime state beyond its declared properties
-renders that state's default until the client hydrates. See [Limitations](/reference/limitations).
+Only `template()` runs on the server — from properties and the element's authored light DOM. Each instance is
+backed by the parsed node it renders for, so reads like `this.children`, `this.childElementCount`,
+`this.innerHTML`, `this.textContent`, `this.querySelector(…)` and `this.getAttribute(…)` see the authored
+markup exactly as the browser's first render would (a slider counting its slides for pagination bullets
+renders the same on both sides). `connected()`, watchers, effects, and DOM measurement do not run. A component
+whose initial markup depends on runtime state beyond that renders the default until the client hydrates. See
+[Limitations](/reference/limitations).
 :::
 
 ## State transport

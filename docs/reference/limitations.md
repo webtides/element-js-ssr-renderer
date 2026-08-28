@@ -4,10 +4,14 @@
 
 - **Declarative Shadow DOM support.** All current evergreen browsers parse `<template shadowrootmode>`. For
   legacy browsers, ship a small DSD polyfill.
-- **No lifecycle on the server.** Only `template()` runs (purely, from properties); `connected()`, watchers,
-  effects and DOM measurement do not. Components whose initial markup depends on runtime state beyond their
-  declared properties will render that state's default until the client hydrates. See
+- **No lifecycle on the server.** Only `template()` runs (from properties and the element's authored light
+  DOM — `this.children`, `this.innerHTML`, `this.querySelector(…)`, `this.getAttribute(…)` etc. are backed by
+  the parsed node); `connected()`, watchers, effects and DOM measurement do not. Components whose initial
+  markup depends on runtime state beyond that will render that state's default until the client hydrates. See
   [Rendering & hydration](/concepts/).
+- **Light-DOM introspection is read-only.** The children/query surface hands the template parsed-HTML nodes —
+  a close but not identical Element API, sufficient for the read-only introspection templates do, not for
+  mutation or layout measurement.
 - **State transport.** element-js' `ejs:key` / `serializeState` plumbing can carry server state to the
   client; wiring it through this transformer is on the roadmap (see below).
 

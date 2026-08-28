@@ -24,6 +24,46 @@ function coerceAttribute(raw, fallback) {
 }
 
 /**
+ * Back the instance's DOM-introspection surface with the parsed node it is being rendered for, so
+ * templates (and the `properties()` / `serializeState()` calls around them) that derive markup from
+ * their authored light DOM — counting slides for pagination bullets, re-slotting `innerHTML`,
+ * reading attributes — see the same values on the server as during the browser's first render.
+ * Without this, the instance only has the dom-shim's empty defaults and the SSR output diverges.
+ *
+ * The children/query surface hands out node-html-parser nodes — a close but not identical Element
+ * API, sufficient for the read-only introspection templates do.
+ * @param {HTMLElement} instance
+ * @param {import('node-html-parser').HTMLElement} node
+ */
+function backWithNode(instance, node) {
+  const elementChildren = () =>
+    node.childNodes.filter((c) => c.nodeType === NodeType.ELEMENT_NODE);
+  Object.defineProperties(instance, {
+    childNodes: { get: () => node.childNodes, configurable: true },
+    children: { get: () => elementChildren(), configurable: true },
+    childElementCount: {
+      get: () => elementChildren().length,
+      configurable: true,
+    },
+    firstElementChild: {
+      get: () => elementChildren()[0] ?? null,
+      configurable: true,
+    },
+    lastElementChild: {
+      get: () => elementChildren().at(-1) ?? null,
+      configurable: true,
+    },
+    innerHTML: { get: () => node.innerHTML, configurable: true },
+    textContent: { get: () => node.textContent, configurable: true },
+  });
+  instance.querySelector = (selector) => node.querySelector(selector);
+  instance.querySelectorAll = (selector) => node.querySelectorAll(selector);
+  // node-html-parser returns `undefined` for a missing attribute; the DOM contract is `null`.
+  instance.getAttribute = (name) => node.getAttribute(name) ?? null;
+  instance.hasAttribute = (name) => node.hasAttribute(name);
+}
+
+/**
  * Build an element-js instance from its class + parsed attributes and render its template to a
  * string. We bypass the element lifecycle entirely: construct, assign default properties merged
  * with the attribute values, then call `template()` and stringify the resulting `TemplateResult`.
@@ -32,10 +72,16 @@ function coerceAttribute(raw, fallback) {
  * @param {boolean} [serialize] - when true, also capture the instance's `serializeState()` so the
  *   renderer can transport it to the client (T-007). Off by default so the value (and its DOM-touching
  *   side effects) are only computed when state transport is opted in.
+ * @param {import('node-html-parser').HTMLElement} [node] - the parsed element this instance is
+ *   rendered for; backs the instance's light-DOM introspection (see {@link backWithNode}).
  * @return {{ markup: string, shadow: boolean, styleEntries: {index: number, css: string}[], adoptGlobalStyles: boolean | string | string[], serializedState: object | undefined }}
  */
-function renderComponent(Constructor, attributes, serialize) {
+function renderComponent(Constructor, attributes, serialize, node) {
   const instance = new Constructor();
+
+  // Wire the node in before `properties()` runs: in the browser, properties are collected at
+  // upgrade time with the authored children and attributes already present.
+  if (node) backWithNode(instance, node);
 
   const defaults =
     typeof instance.properties === "function" ? instance.properties() : {};
@@ -254,6 +300,7 @@ function transformNode(node, ctx) {
         Constructor,
         child.attributes ?? {},
         ctx.serializeState,
+        child,
       );
       const idBase = tag.toUpperCase();
 

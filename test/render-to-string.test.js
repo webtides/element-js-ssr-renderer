@@ -172,6 +172,96 @@ describe("renderToString", () => {
   });
 });
 
+// Components deriving markup from their authored light DOM — the instance must be backed by the
+// parsed node so the server render matches the browser's first render (issue #1).
+class SliderPagination extends TemplateElement {
+  constructor() {
+    super({ shadowRender: true });
+  }
+  template() {
+    const bullets = [...this.children].map(
+      (_, i) => html`<button class="bullet">${i + 1}</button>`,
+    );
+    return html`<div class="track"><slot></slot></div>
+      <nav>${bullets}</nav>`;
+  }
+}
+class EchoContent extends TemplateElement {
+  template() {
+    return html`<p class="echo">${this.textContent.trim()}</p>
+      <p class="count">${this.childElementCount}</p>`;
+  }
+}
+class QueryReader extends TemplateElement {
+  template() {
+    const heading = this.querySelector("h2");
+    return html`<header>${heading ? heading.textContent : "untitled"}</header>
+      <span>${this.getAttribute("label") ?? "no-label"}</span>
+      <span>${this.hasAttribute("featured") ? "featured" : "plain"}</span>`;
+  }
+}
+class AttrProperties extends TemplateElement {
+  properties() {
+    // properties() may read the DOM surface too — in the browser it runs at upgrade time
+    return { greeting: this.getAttribute("greeting") ?? "Hello" };
+  }
+  template() {
+    return html`<p>${this.greeting}</p>`;
+  }
+}
+
+describe("light-DOM introspection during SSR", () => {
+  const introspectionCatalog = {
+    "x-slider": SliderPagination,
+    "x-echo": EchoContent,
+    "x-query": QueryReader,
+    "x-attr-props": AttrProperties,
+  };
+  // Render and strip the hydration comment markers, so assertions read like plain markup.
+  const renderWith = async (html) => {
+    const out = await renderToString(html, { resolve: introspectionCatalog });
+    return out.replace(/<!--[\s\S]*?-->/g, "");
+  };
+
+  it("counts authored children (this.children) — slider pagination", async () => {
+    const out = await renderWith(
+      '<x-slider><div class="slide">a</div><div class="slide">b</div><div class="slide">c</div></x-slider>',
+    );
+    expect(out.match(/class="bullet"/g)?.length).toBe(3);
+    // the authored slides survive as slotted light DOM
+    expect(out).toContain('<div class="slide">a</div>');
+  });
+
+  it("re-slots authored content via textContent / childElementCount", async () => {
+    const out = await renderWith("<x-echo><b>Hi</b> there</x-echo>");
+    expect(out).toContain('<p class="echo">Hi there</p>');
+    expect(out).toContain('<p class="count">1</p>');
+  });
+
+  it("supports querySelector / getAttribute / hasAttribute in template()", async () => {
+    const out = await renderWith(
+      '<x-query label="News" featured><h2>Breaking</h2></x-query>',
+    );
+    expect(out).toContain("<header>Breaking</header>");
+    expect(out).toContain("<span>News</span>");
+    expect(out).toContain("<span>featured</span>");
+  });
+
+  it("falls back like the browser when the light DOM lacks the queried parts", async () => {
+    const out = await renderWith("<x-query>plain text</x-query>");
+    expect(out).toContain("<header>untitled</header>");
+    expect(out).toContain("<span>no-label</span>");
+    expect(out).toContain("<span>plain</span>");
+  });
+
+  it("lets properties() read attributes off the parsed node", async () => {
+    const out = await renderWith(
+      '<x-attr-props greeting="Servus"></x-attr-props>',
+    );
+    expect(out).toContain("<p>Servus</p>");
+  });
+});
+
 // A shadow component whose generated template itself contains another custom element — exercises
 // resolution of tags that appear only in generated output, not in the input HTML.
 class Wrapper extends TemplateElement {
