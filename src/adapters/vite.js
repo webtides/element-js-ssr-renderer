@@ -100,6 +100,7 @@ function isInside(dir, file) {
  *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   components?: string,
  *   onUnresolved?: (tag: string) => void,
+ *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  * }} [options]
  * @return {import('vite').Plugin} a Vite plugin
@@ -108,6 +109,7 @@ export function elementSSR({
   resolve,
   components,
   onUnresolved,
+  onError,
   serializeState = false,
 } = {}) {
   // The auto-discovered catalog of this project's own components — rebuilt from `components` on
@@ -176,6 +178,7 @@ export function elementSSR({
         renderToString(html, {
           resolve: resolveSources(),
           onUnresolved,
+          onError,
           serializeState,
         }),
     },

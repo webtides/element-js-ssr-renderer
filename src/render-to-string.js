@@ -268,6 +268,9 @@ function isEmptyTemplate(markup) {
  * @property {(tag: string) => void} [onUnresolved] - called with each custom-element-looking tag
  *   (contains `-`) not yet in `resolved`. The async resolver uses this to discover which tags to
  *   load; it also backs the dev-mode "unresolved tag" warning (T-008.6).
+ * @property {(tag: string, error: Error) => void} [onError] - called when rendering a resolved
+ *   component throws; the element is left untouched (T-020). `renderToString` records these per
+ *   pass and reports each distinct tag once after convergence.
  * @property {boolean} [serializeState] - when true, stamp each rendered component with a deterministic
  *   `ejs:key` and collect its state into `stateMap` for client hydration (T-007).
  * @property {Object<string, object>} stateMap - merged state, keyed by `ejs:key` (and store keys),
@@ -290,21 +293,33 @@ function transformNode(node, ctx) {
     const Constructor = tag ? ctx.resolved[tag] : undefined;
 
     if (Constructor) {
-      const {
-        markup,
-        shadow,
-        styleEntries,
-        adoptGlobalStyles,
-        serializedState,
-      } = renderComponent(
-        Constructor,
-        child.attributes ?? {},
-        ctx.serializeState,
-        child,
-      );
-      const idBase = tag.toUpperCase();
+      // Per-component error isolation (T-020): a throwing constructor / `properties()` /
+      // `template()` / `serializeState()` must not take down the whole-page transform. The failing
+      // element is left untouched — like an unresolved tag, its authored markup survives and can
+      // still hydrate client-side — and the error is reported per tag (see `onError`).
+      let rendered;
+      try {
+        rendered = renderComponent(
+          Constructor,
+          child.attributes ?? {},
+          ctx.serializeState,
+          child,
+        );
+      } catch (error) {
+        ctx.onError?.(tag, error);
+      }
 
-      if (!isEmptyTemplate(markup)) {
+      // Components with an empty template (behavioral wrappers) fall through untouched, exactly
+      // like a failed render above.
+      if (rendered && !isEmptyTemplate(rendered.markup)) {
+        const {
+          markup,
+          shadow,
+          styleEntries,
+          adoptGlobalStyles,
+          serializedState,
+        } = rendered;
+        const idBase = tag.toUpperCase();
         // State transport (T-007): give the host a deterministic `ejs:key` and record its
         // server-rendered state so the client restores it on hydration instead of falling back to
         // property defaults. Done for both render paths below (the attribute stays on `child`).
@@ -367,8 +382,9 @@ function transformNode(node, ctx) {
       }
     }
 
-    // Reached for plain tags, registered wrappers with an empty template, and unresolved custom
-    // elements. Only the last — a hyphenated tag with no constructor — is reported as unresolved.
+    // Reached for plain tags, registered wrappers with an empty template, components whose render
+    // threw (isolated above), and unresolved custom elements. Only the last — a hyphenated tag
+    // with no constructor — is reported as unresolved.
     if (!Constructor && tag?.includes("-")) ctx.onUnresolved?.(tag);
     transformNode(child, ctx);
   }
@@ -419,6 +435,22 @@ function defaultUnresolvedWarning() {
 }
 
 /**
+ * The default `onError` handler: log each failing tag's error via `console.error`. Unlike the
+ * unresolved-tag warning this is NOT dev-only — with the element silently left unrendered, a log
+ * line is the only trace a production page has of the failure. Pass your own `onError` to route it
+ * elsewhere (or silence it) — or rethrow inside it to fail the whole render instead (fail-fast).
+ * @param {string} tag
+ * @param {Error} error
+ */
+function defaultErrorReport(tag, error) {
+  console.error(
+    `[element-js-ssr-renderer] <${tag}> threw during SSR — left unrendered ` +
+      `(it will still hydrate client-side if defined there).`,
+    error,
+  );
+}
+
+/**
  * Parse `html`, pre-render every custom element found in `resolved`, and stringify. Pure over
  * (`html`, `resolved`), so the resolution fixpoint can call it repeatedly with a growing map of
  * resolved tags (see {@link renderToString}).
@@ -426,9 +458,10 @@ function defaultUnresolvedWarning() {
  * @param {Object<string, CustomElementConstructor>} resolved - tags already resolved to their classes
  * @param {(tag: string) => void} [onUnresolved]
  * @param {boolean} [serializeState] - opt into client state transport (T-007)
+ * @param {(tag: string, error: Error) => void} [onError] - render-error recorder (T-020)
  * @return {string}
  */
-function runTransform(html, resolved, onUnresolved, serializeState) {
+function runTransform(html, resolved, onUnresolved, serializeState, onError) {
   const root = parse(html, PARSE_OPTIONS);
   // Collect global styles up front, before any generated shadow templates are spliced in, so we
   // only ever adopt the input document's own stylesheets.
@@ -439,6 +472,7 @@ function runTransform(html, resolved, onUnresolved, serializeState) {
     globalStyles,
     lightStyleIds: new Set(),
     onUnresolved,
+    onError,
     serializeState,
     stateMap,
     storeKeys: new Set(),
@@ -603,28 +637,37 @@ function composeSources(sources) {
  * the client restores server state on hydration instead of re-deriving from defaults (T-007). The
  * DOM shim must be imported before any component module for this (and SSR generally) to work.
  *
+ * A component whose constructor, `properties()`, `template()` or `serializeState()` throws does
+ * not fail the page: the element is left untouched — like an unresolved tag, its authored markup
+ * survives and can still hydrate client-side — and `onError` is called once per failing tag
+ * (default: a `console.error`). To fail fast instead, rethrow from your own `onError` (T-020).
+ *
  * @param {string} html - an HTML document or fragment (e.g. a framework's rendered response)
  * @param {{
  *   resolve?: Catalog | ((tag: string) => *) | Array<Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
+ *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  * }} [options]
  *   `resolve` is a {@link Catalog} (a `{ tag: Class }` / `import.meta.glob()` map, eager classes and
  *   lazy loaders auto-detected) or a `(tag) => …` resolver function — or an array of either, composed
  *   later-wins on a tag clash. `onUnresolved` is called once per custom-element tag that no source
- *   could resolve; it defaults to a dev-only warning (pass `() => {}` to silence). `serializeState`
+ *   could resolve; it defaults to a dev-only warning (pass `() => {}` to silence). `onError` is
+ *   called once per tag whose component threw while rendering; it defaults to a `console.error`
+ *   (not dev-only), and rethrowing from it fails the whole render. `serializeState`
  *   (default `false`) opts into client state transport.
  * @return {Promise<string>} the HTML with custom elements pre-rendered
  */
 export async function renderToString(
   html,
-  { resolve, onUnresolved, serializeState = false } = {},
+  { resolve, onUnresolved, onError, serializeState = false } = {},
 ) {
   setSerializeStateConfig(serializeState);
   const sources =
     resolve == null ? [] : Array.isArray(resolve) ? resolve : [resolve];
   const resolver = composeSources(sources);
   const warn = onUnresolved ?? defaultUnresolvedWarning();
+  const reportError = onError ?? defaultErrorReport;
 
   const resolved = {}; // tag -> class; the map handed to each transform pass, growing each time
   const attempted = new Set(); // tags we've already tried, so genuine misses don't loop forever
@@ -632,17 +675,24 @@ export async function renderToString(
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const misses = new Set();
+    // Render errors are re-collected each pass (passes re-render from the original html); only the
+    // converged pass's set is reported, so each failing tag surfaces exactly once (T-020).
+    const errors = new Map(); // tag -> first error thrown rendering that tag this pass
     const out = runTransform(
       html,
       resolved,
       (tag) => misses.add(tag),
       serializeState,
+      (tag, error) => {
+        if (!errors.has(tag)) errors.set(tag, error);
+      },
     );
 
     const fresh = [...misses].filter((tag) => !attempted.has(tag));
     if (fresh.length === 0) {
       // Converged. Anything still missing is genuinely unresolvable — surface it (warn by default).
       if (warn) for (const tag of misses) if (!resolved[tag]) warn(tag);
+      for (const [tag, error] of errors) reportError(tag, error);
       return out;
     }
 

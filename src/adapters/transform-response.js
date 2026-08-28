@@ -14,6 +14,7 @@ import { renderToString } from "../render-to-string.js";
  * @param {{
  *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
+ *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  * }} [options] - forwarded to {@link renderToString}
  * @return {Promise<Response>} the original response if non-HTML, else a new one with the same

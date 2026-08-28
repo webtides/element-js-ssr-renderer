@@ -427,6 +427,107 @@ describe("unresolved-tag warning (dev)", () => {
   });
 });
 
+// Components that throw at each stage `renderComponent` runs — the page must survive all of them
+// with the failing element left untouched (T-020, issue #3).
+class ThrowingTemplate extends TemplateElement {
+  template() {
+    throw new Error("boom-template");
+  }
+}
+class ThrowingProperties extends TemplateElement {
+  properties() {
+    throw new Error("boom-properties");
+  }
+  template() {
+    return html`<p>never rendered</p>`;
+  }
+}
+class ThrowingConstructor extends TemplateElement {
+  constructor() {
+    super();
+    throw new Error("boom-constructor");
+  }
+}
+
+describe("per-component error isolation", () => {
+  const errorCatalog = {
+    ...catalog,
+    "x-throws": ThrowingTemplate,
+    "x-throws-props": ThrowingProperties,
+    "x-throws-ctor": ThrowingConstructor,
+  };
+  const renderIsolated = (html, options = {}) =>
+    renderToString(html, {
+      resolve: errorCatalog,
+      onError: () => {},
+      ...options,
+    });
+
+  it("leaves the throwing element untouched and still renders its siblings", async () => {
+    const out = await renderIsolated(
+      '<x-throws><span class="kept">authored</span></x-throws><el-button>ok</el-button>',
+    );
+    // the failing element keeps its authored markup, as if unresolved
+    expect(out).toContain(
+      '<x-throws><span class="kept">authored</span></x-throws>',
+    );
+    // the healthy sibling still pre-renders
+    expect(out).toContain('<template shadowrootmode="open">');
+  });
+
+  it("isolates throwing properties() and constructor the same way", async () => {
+    const out = await renderIsolated(
+      "<x-throws-props>a</x-throws-props><x-throws-ctor>b</x-throws-ctor>",
+    );
+    expect(out).toContain("<x-throws-props>a</x-throws-props>");
+    expect(out).toContain("<x-throws-ctor>b</x-throws-ctor>");
+    expect(out).not.toContain("never rendered");
+  });
+
+  it("still renders custom elements nested inside a failing one", async () => {
+    const out = await renderIsolated(
+      "<x-throws><el-button>inner</el-button></x-throws>",
+    );
+    expect(out).toContain('<template shadowrootmode="open">');
+  });
+
+  it("calls onError once per failing tag with the thrown error", async () => {
+    const onError = vi.fn();
+    await renderIsolated(
+      "<x-throws>1</x-throws><x-throws>2</x-throws><x-throws-props>3</x-throws-props>",
+      { onError },
+    );
+    expect(onError).toHaveBeenCalledTimes(2);
+    const byTag = Object.fromEntries(onError.mock.calls);
+    expect(byTag["x-throws"].message).toBe("boom-template");
+    expect(byTag["x-throws-props"].message).toBe("boom-properties");
+  });
+
+  it("logs via console.error by default, also in production", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      await renderToString("<x-throws></x-throws>", { resolve: errorCatalog });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0][0]).toContain("<x-throws>");
+    } finally {
+      process.env.NODE_ENV = prev;
+      spy.mockRestore();
+    }
+  });
+
+  it("fails the whole render when onError rethrows (fail-fast opt-in)", async () => {
+    await expect(
+      renderIsolated("<x-throws></x-throws>", {
+        onError: (_tag, error) => {
+          throw error;
+        },
+      }),
+    ).rejects.toThrow("boom-template");
+  });
+});
+
 // A plain stateful shadow component: its `count`/`label` properties form its serializable state.
 class StateCounter extends TemplateElement {
   constructor() {

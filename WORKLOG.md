@@ -21,6 +21,15 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-08-28 — Per-component error isolation (T-020, issue #3)
+
+**Tasks:** T-020
+
+- Fixed GH issue #3: one component throwing in its constructor / `properties()` / `template()` / `serializeState()` no longer fails (or corrupts) the whole `renderToString` — the failing element is left **untouched**, exactly like an unresolved tag: authored markup survives, siblings and nested custom elements still pre-render, and the element can still hydrate client-side. (Strictly better than the issue's production workaround, which rendered the failing component empty.)
+- New `onError(tag, error)` option mirroring `onUnresolved`, threaded through all six adapters (astro/nuxt/sveltekit/node/vite/eleventy + transform-response JSDoc). Errors are collected per transform pass and reported once per distinct tag after the resolution fixpoint converges.
+- Deviations from the issue's proposal, on purpose: no `isolateErrors` opt-in flag — isolation is always on, and fail-fast is a rethrow from your own `onError`; and the default reporter is `console.error` **not** dev-gated (unlike the unresolved warning) — with the element silently unrendered, a log line is a production page's only trace.
+- +6 tests (`per-component error isolation`: untouched element + healthy siblings, properties/constructor variants, nested elements inside a failing one, once-per-tag hook, prod-visible default logging, rethrow fail-fast); suite green at **80**. Docs: API reference `onError` section + option rows, limitations note.
+
 ## 2026-08-28 — Light-DOM introspection during SSR (T-019, issue #1)
 
 **Tasks:** T-019

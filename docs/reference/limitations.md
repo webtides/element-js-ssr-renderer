@@ -9,6 +9,11 @@
   the parsed node); `connected()`, watchers, effects and DOM measurement do not. Components whose initial
   markup depends on runtime state beyond that will render that state's default until the client hydrates. See
   [Rendering & hydration](/concepts/).
+- **Per-component error isolation.** A component whose constructor, `properties()`, `template()` or
+  `serializeState()` throws during SSR does not fail the page: the element is left untouched (its authored
+  markup survives and hydrates client-side), and the error surfaces via the `onError` hook — by default a
+  `console.error`, also in production. Rethrow from your own `onError` to fail fast instead. See
+  [API → onError](/api/#onerror).
 - **Light-DOM introspection is read-only.** The children/query surface hands the template parsed-HTML nodes —
   a close but not identical Element API, sufficient for the read-only introspection templates do, not for
   mutation or layout measurement.

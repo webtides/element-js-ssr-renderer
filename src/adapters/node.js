@@ -47,6 +47,7 @@ import { renderToString } from "../render-to-string.js";
  * @param {{
  *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
+ *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  * }} [options]
  * @return {(req: any, res: any, next: () => void) => void} a Connect-style middleware
@@ -54,9 +55,10 @@ import { renderToString } from "../render-to-string.js";
 export function elementSSR({
   resolve,
   onUnresolved,
+  onError,
   serializeState = false,
 } = {}) {
-  const options = { resolve, onUnresolved, serializeState };
+  const options = { resolve, onUnresolved, onError, serializeState };
 
   return (req, res, next) => {
     const originalWrite = res.write;

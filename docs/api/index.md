@@ -15,6 +15,7 @@ renderToString(
   options?: {
     resolve?: Catalog | ResolveFn | Array<Catalog | ResolveFn>,
     onUnresolved?: (tag: string) => void,
+    onError?: (tag: string, error: Error) => void,
     serializeState?: boolean,
   },
 ): Promise<string>
@@ -25,6 +26,7 @@ renderToString(
 | `html`                   | An HTML document or fragment (e.g. a framework's rendered response).                                                                                                                                   |
 | `options.resolve`        | A [`Catalog`](#catalog) (a `{ tag: … }` map of eager classes and/or lazy loaders, auto-detected) or a [resolver function](#resolvefn) — or an array of either, composed **later-wins** on a tag clash. |
 | `options.onUnresolved`   | Called once per custom-element-looking tag (contains `-`) that no source resolves. See [below](#onunresolved).                                                                                         |
+| `options.onError`        | Called once per tag whose component threw while rendering; the element is left untouched. See [below](#onerror).                                                                                       |
 | `options.serializeState` | Opt into [client state transport](#serializestate). Defaults to `false`.                                                                                                                               |
 
 **Returns** a `Promise` of the HTML with every resolved custom element pre-rendered in place.
@@ -79,6 +81,7 @@ elementSSR(options?): handle hook (transformPageChunk)
 options?: {
   resolve?: Catalog | ResolveFn | Array<Catalog | ResolveFn>,
   onUnresolved?: (tag: string) => void,
+  onError?: (tag: string, error: Error) => void,
   serializeState?: boolean,
 }
 ```
@@ -131,6 +134,16 @@ lookup, etc.
 The default handler warns once per distinct tag in non-production only (`NODE_ENV`-gated, edge-safe), to
 catch a forgotten source or a typo; it is silent in production. Pass your own to handle it, or `() => {}` to
 silence it for intentionally client-only / third-party tags.
+
+### `onError`
+
+`(tag: string, error: Error) => void`, called once per tag whose component threw while rendering —
+in its constructor, `properties()`, `template()` or `serializeState()`. The failure is isolated to the
+component: the element is left untouched (like an unresolved tag), so its authored markup survives, its
+siblings and nested elements still pre-render, and it can still hydrate client-side. The default handler
+logs each failing tag via `console.error` — **not** dev-only, since with the element silently left
+unrendered a log line is a production page's only trace of the failure. Pass your own to route or silence
+it — or **rethrow inside it to fail the whole render** instead (fail-fast, e.g. during development or tests).
 
 ### `serializeState`
 
