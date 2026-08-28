@@ -1,6 +1,6 @@
 import "../src/dom-shim.js"; // before any component import (incl. the generated catalog's targets)
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -33,6 +33,106 @@ describe("catalogEntriesFromDirectory", () => {
     expect(entries).toEqual([
       { tag: "el-fixture", file: path.join(fixturesDir, "el-fixture.js") },
     ]);
+  });
+});
+
+describe("catalogEntriesFromDirectory — recursive + tag hook", () => {
+  let tmp;
+  beforeAll(() => {
+    // an element-js-style nested layout where one tag doesn't match its basename
+    tmp = mkdtempSync(path.join(os.tmpdir(), "ssrgen-rec-"));
+    mkdirSync(path.join(tmp, "icon"));
+    mkdirSync(path.join(tmp, "nested/deep"), { recursive: true });
+    writeFileSync(path.join(tmp, "el-top.js"), "export default class {}\n");
+    writeFileSync(
+      path.join(tmp, "icon/icon.js"),
+      "defineElement('mb-icon', Icon);\n",
+    );
+    writeFileSync(
+      path.join(tmp, "nested/deep/el-deep.js"),
+      "export default class {}\n",
+    );
+    writeFileSync(path.join(tmp, "nested/helper.js"), "export const x = 1;\n");
+  });
+  afterAll(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("stays flat by default (back-compat)", () => {
+    const entries = catalogEntriesFromDirectory(tmp);
+    expect(entries.map((e) => e.tag)).toEqual(["el-top"]);
+  });
+
+  it("recursive: true walks nested folders, basename convention unchanged", () => {
+    const entries = catalogEntriesFromDirectory(tmp, { recursive: true });
+    // icon/icon.js and nested/helper.js have no hyphen → skipped, as in flat mode
+    expect(entries).toEqual([
+      { tag: "el-top", file: path.join(tmp, "el-top.js") },
+      { tag: "el-deep", file: path.join(tmp, "nested/deep/el-deep.js") },
+    ]);
+  });
+
+  it("tag hook overrides the basename convention per file, with lazy source", () => {
+    const entries = catalogEntriesFromDirectory(tmp, {
+      recursive: true,
+      tag: ({ source }) =>
+        source.match(/defineElement\(["']([^"']+)["']/)?.[1] ?? null,
+    });
+    expect(entries.map((e) => e.tag)).toEqual(["el-top", "mb-icon", "el-deep"]);
+    expect(entries[1].file).toBe(path.join(tmp, "icon/icon.js"));
+  });
+
+  it("hands the hook path, POSIX relativePath and basename", () => {
+    const seen = [];
+    catalogEntriesFromDirectory(tmp, {
+      recursive: true,
+      tag: ({ path: file, relativePath, basename }) => {
+        seen.push({ file, relativePath, basename });
+        return null;
+      },
+    });
+    expect(seen).toContainEqual({
+      file: path.join(tmp, "icon/icon.js"),
+      relativePath: "icon/icon.js",
+      basename: "icon",
+    });
+  });
+
+  it("supports multiple tags per file and [] to skip", () => {
+    const entries = catalogEntriesFromDirectory(tmp, {
+      recursive: true,
+      tag: ({ relativePath }) =>
+        relativePath === "el-top.js" ? ["x-one", "x-two"] : [],
+    });
+    expect(entries).toEqual([
+      { tag: "x-one", file: path.join(tmp, "el-top.js") },
+      { tag: "x-two", file: path.join(tmp, "el-top.js") },
+    ]);
+  });
+
+  it("warns loudly and skips an invalid returned tag", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const entries = catalogEntriesFromDirectory(tmp, {
+        tag: () => "NoHyphen",
+      });
+      expect(entries).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('"NoHyphen"'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("buildCatalog forwards recursive and tag", async () => {
+    const out = path.join(tmp, ".out/catalog.js");
+    const { entries } = buildCatalog({
+      dir: tmp,
+      out,
+      recursive: true,
+      tag: ({ source, basename }) =>
+        source.match(/defineElement\(["']([^"']+)["']/)?.[1] ?? null,
+    });
+    expect(entries.map((e) => e.tag)).toEqual(["el-top", "mb-icon", "el-deep"]);
   });
 });
 

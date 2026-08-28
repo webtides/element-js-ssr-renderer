@@ -21,6 +21,15 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-08-28 — Catalog generator: recursive mode + `tag` hook (T-024, issue #5)
+
+**Tasks:** T-024
+
+- Fixed GH issue #5's two gaps in directory mode: `recursive: true` (CLI `-r`/`--recursive`) walks nested layouts (`components/<name>/<name>.js`; sorted deterministic, dot-dirs and `node_modules` skipped), and a programmatic `tag(entry)` hook overrides the basename→tag convention per file — for projects registering via `defineElement('mb-icon', Icon)` in `icon.js`.
+- The hook receives `{ path, relativePath, basename, source }` (`source` is a lazy read) and returns a tag, `string[]`, `[]` to skip the file, or `null` to fall back to the convention. Returned tags are validated (lower-case, hyphenated); invalid ones are skipped with a warning — loud, never silent.
+- Deliberate deviation from the issue: no built-in `defineElement()` regex scan — the heuristic stays out of the core and becomes a documented one-line userland hook over `entry.source`, keeping the generator deterministic.
+- +7 tests (suite at 108); docs: resolving-components "Nested folders and tags that don't match the filename" section, API CLI flag table.
+
 ## 2026-08-28 — `exclude` option: client-only tags declared from outside (T-023, issue #2)
 
 **Tasks:** T-023

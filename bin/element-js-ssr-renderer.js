@@ -21,9 +21,13 @@ Usage:
 
 Options:
   -o, --out <file>       Output module path (required)
+  -r, --recursive        Also scan nested directories (directory mode)
       --manifest <file>  Read tags from a custom-elements.json instead of scanning a directory
       --base <dir>       Package root the manifest's paths resolve against (default: manifest's dir)
-  -h, --help             Show this help`;
+  -h, --help             Show this help
+
+The programmatic API (buildCatalog) additionally takes a \`tag\` hook to override the
+filename→tag convention per file — see the docs on resolving components.`;
 
 function fail(msg) {
   console.error(`element-js-ssr-renderer: ${msg}\n\n${USAGE}`);
@@ -45,6 +49,7 @@ try {
     allowPositionals: true,
     options: {
       out: { type: "string", short: "o" },
+      recursive: { type: "boolean", short: "r" },
       manifest: { type: "string" },
       base: { type: "string" },
       help: { type: "boolean", short: "h" },
@@ -71,6 +76,7 @@ try {
     manifest: values.manifest,
     base: values.base,
     out: values.out,
+    recursive: values.recursive,
   });
   console.log(
     `element-js-ssr-renderer: wrote ${entries.length} component${entries.length === 1 ? "" : "s"} → ${outFile}`,

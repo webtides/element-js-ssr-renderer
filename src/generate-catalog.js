@@ -9,10 +9,12 @@
  * into `resolve` — no wrapper (the renderer auto-detects the loader thunks).
  *
  * Two input modes:
- *   - **directory** — flat scan by filename convention (`x-counter.js` → `x-counter`). Tags must
- *     contain a hyphen (custom-element spec), so helper files are skipped.
- *   - **manifest** — a `custom-elements.json` (CEM). Handles nested layouts (e.g. element-library's
- *     `src/components/<name>/<name>.js`) via the manifest's module paths.
+ *   - **directory** — scan by filename convention (`x-counter.js` → `x-counter`; tags must contain
+ *     a hyphen per the custom-element spec, so helper files are skipped). `recursive` walks nested
+ *     layouts (`src/components/<name>/<name>.js`); the `tag` hook overrides the basename
+ *     convention per file for projects where the tag doesn't match the filename (T-024).
+ *   - **manifest** — a `custom-elements.json` (CEM). Handles nested layouts via the manifest's
+ *     module paths.
  *
  * Meant for a dev/build step, never imported at render time. Exposed programmatically (this module)
  * and as the `element-js-ssr-renderer catalog` CLI (`bin/element-js-ssr-renderer.js`).
@@ -55,29 +57,109 @@ function relSpecifier(fromFile, toFile) {
 }
 
 /**
- * Discover `{ tag, file }` entries by flat directory convention. Only hyphenated `*.js` basenames
+ * Candidate `*.[cm]js` files under `dirPath`, sorted per level so output is deterministic. With
+ * `recursive`, nested folders are walked in place (dot-directories and `node_modules` skipped);
+ * `exclude`d names and `out` itself never make it in.
+ * @param {string} dirPath
+ * @param {{ exclude: RegExp, recursive: boolean, out: string | undefined }} options
+ * @param {string[]} [files]
+ * @return {string[]}
+ */
+function componentFiles(dirPath, options, files = []) {
+  for (const name of readdirSync(dirPath).sort()) {
+    const file = path.join(dirPath, name);
+    const stat = statSync(file);
+    if (stat.isDirectory()) {
+      if (options.recursive && !name.startsWith(".") && name !== "node_modules")
+        componentFiles(file, options, files);
+      continue;
+    }
+    if (
+      !stat.isFile() ||
+      !/\.[cm]?js$/.test(name) ||
+      options.exclude.test(name)
+    )
+      continue;
+    if (file === options.out) continue;
+    files.push(file);
+  }
+  return files;
+}
+
+/** Whether a `tag` hook return is a usable custom-element name: lower-case, with a hyphen. */
+function isValidTag(tag) {
+  return (
+    typeof tag === "string" && tag.includes("-") && tag === tag.toLowerCase()
+  );
+}
+
+/**
+ * The tag(s) a discovered file contributes: the `tag` hook's answer, else the basename convention
+ * (a hyphenated basename is its own tag; anything else is a helper file and contributes none).
+ * Hook returns are validated — an invalid tag is skipped with a warning, never silently.
+ * @param {string} file
+ * @param {string} baseDir
+ * @param {(entry: object) => string | string[] | null | undefined} [tagHook]
+ * @return {string[]}
+ */
+function tagsForFile(file, baseDir, tagHook) {
+  const basename = tagFromFile(file);
+  const fallback = basename.includes("-") ? [basename] : [];
+  if (!tagHook) return fallback;
+
+  let source; // read lazily — only hooks that look at file contents pay for the read
+  const result = tagHook({
+    path: file,
+    relativePath: path.relative(baseDir, file).split(path.sep).join("/"),
+    basename,
+    get source() {
+      return (source ??= readFileSync(file, "utf8"));
+    },
+  });
+  if (result == null) return fallback; // hook abstains → basename convention
+
+  return (Array.isArray(result) ? result : [result]).filter((tag) => {
+    if (isValidTag(tag)) return true;
+    console.warn(
+      `[element-js-ssr-renderer] catalog: tag(…) returned ${JSON.stringify(tag)} for ` +
+        `${path.relative(baseDir, file)} — not a valid custom-element name (lower-case, ` +
+        `with a hyphen) — skipped.`,
+    );
+    return false;
+  });
+}
+
+/**
+ * Discover `{ tag, file }` entries by directory convention. Only hyphenated `*.js` basenames
  * are taken (a valid custom-element tag must contain a hyphen); `*.define.js`, test/spec/story
  * files, prior `*.generated.js` output, and `outFile` itself are skipped.
  *
+ * `recursive` walks nested folders. The `tag` hook overrides the basename convention per file —
+ * for projects where the tag doesn't match the filename, e.g. element-js'
+ * `defineElement('mb-icon', Icon)` in `icon.js` (T-024). It receives
+ * `{ path, relativePath, basename, source }` (`source` reads the file lazily) and returns the
+ * tag, an array of tags (a multi-element file), `[]` to skip the file, or `null`/`undefined` to
+ * fall back to the basename convention.
+ *
  * @param {string | URL} dir
- * @param {{ outFile?: string, exclude?: RegExp }} [options]
+ * @param {{
+ *   outFile?: string,
+ *   exclude?: RegExp,
+ *   recursive?: boolean,
+ *   tag?: (entry: { path: string, relativePath: string, basename: string, source: string }) => string | string[] | null | undefined,
+ * }} [options]
  * @return {{ tag: string, file: string }[]}
  */
 export function catalogEntriesFromDirectory(
   dir,
-  { outFile, exclude = DEFAULT_EXCLUDE } = {},
+  { outFile, exclude = DEFAULT_EXCLUDE, recursive = false, tag } = {},
 ) {
   const baseDir = toDirPath(dir);
   const out = outFile && path.resolve(outFile);
   const entries = [];
-  for (const name of readdirSync(baseDir).sort()) {
-    if (!/\.[cm]?js$/.test(name) || exclude.test(name)) continue;
-    const file = path.join(baseDir, name);
-    if (file === out || !statSync(file).isFile()) continue;
-    const tag = tagFromFile(name);
-    if (!tag.includes("-")) continue; // not a custom-element tag → skip
-    entries.push({ tag, file });
-  }
+  for (const file of componentFiles(baseDir, { exclude, recursive, out }))
+    for (const resolvedTag of tagsForFile(file, baseDir, tag))
+      entries.push({ tag: resolvedTag, file });
   return entries;
 }
 
@@ -139,8 +221,10 @@ ${lines.join("\n")}
 
 /**
  * Generate the catalog module and write it to `out`. Provide exactly one input: `dir` (directory
- * convention) or `manifest` (a CEM — a parsed object or a path to `custom-elements.json`). For a
- * manifest path, `base` defaults to the manifest file's own directory (the usual package root).
+ * convention — with optional `recursive` and `tag` hook, see
+ * {@link catalogEntriesFromDirectory}) or `manifest` (a CEM — a parsed object or a path to
+ * `custom-elements.json`). For a manifest path, `base` defaults to the manifest file's own
+ * directory (the usual package root).
  *
  * @param {{
  *   dir?: string | URL,
@@ -148,10 +232,20 @@ ${lines.join("\n")}
  *   base?: string | URL,
  *   out: string,
  *   exclude?: RegExp,
+ *   recursive?: boolean,
+ *   tag?: (entry: { path: string, relativePath: string, basename: string, source: string }) => string | string[] | null | undefined,
  * }} options
  * @return {{ outFile: string, entries: { tag: string, file: string }[], code: string }}
  */
-export function buildCatalog({ dir, manifest, base, out, exclude }) {
+export function buildCatalog({
+  dir,
+  manifest,
+  base,
+  out,
+  exclude,
+  recursive,
+  tag,
+}) {
   if (!out) throw new TypeError("buildCatalog: `out` is required");
   if ((dir == null) === (manifest == null))
     throw new TypeError(
@@ -161,7 +255,12 @@ export function buildCatalog({ dir, manifest, base, out, exclude }) {
   const outFile = path.resolve(out);
   let entries, source;
   if (dir != null) {
-    entries = catalogEntriesFromDirectory(dir, { outFile, exclude });
+    entries = catalogEntriesFromDirectory(dir, {
+      outFile,
+      exclude,
+      recursive,
+      tag,
+    });
     source = `Source: directory ${dir} (${entries.length} component${entries.length === 1 ? "" : "s"})`;
   } else {
     const isPath = typeof manifest === "string";

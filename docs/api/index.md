@@ -231,11 +231,14 @@ element-js-ssr-renderer catalog <dir> -o <catalog.js>                           
 element-js-ssr-renderer catalog --manifest <custom-elements.json> [--base <dir>] -o <catalog.js>  # from a CEM
 ```
 
-| Flag          | Description                                                                      |
-| ------------- | -------------------------------------------------------------------------------- |
-| `-o`, `--out` | Output module path (required).                                                   |
-| `--manifest`  | Read tags from a `custom-elements.json` instead of scanning a directory.         |
-| `--base`      | Package root the manifest's paths resolve against (default: the manifest's dir). |
+| Flag                | Description                                                                      |
+| ------------------- | -------------------------------------------------------------------------------- |
+| `-o`, `--out`       | Output module path (required).                                                   |
+| `-r`, `--recursive` | Also scan nested directories (directory mode).                                   |
+| `--manifest`        | Read tags from a `custom-elements.json` instead of scanning a directory.         |
+| `--base`            | Package root the manifest's paths resolve against (default: the manifest's dir). |
 
 Emits a module default-exporting a `Catalog` of `{ tag: () => import("./tag.js") }` — pass it straight to
-`resolve`, no wrapper. The same logic is available programmatically as `buildCatalog` from `…/generate`.
+`resolve`, no wrapper. The same logic is available programmatically as `buildCatalog` from `…/generate`,
+which additionally accepts a `tag` hook to override the filename→tag convention per file — see
+[Resolving components](/resolving-components#nested-folders-and-tags-that-don-t-match-the-filename).

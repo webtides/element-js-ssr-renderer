@@ -197,6 +197,34 @@ stays in sync. The same engine is available programmatically as `buildCatalog` f
 `@webtides/element-js-ssr-renderer/generate` if you'd rather drive it from a Vite/rollup plugin. The Nuxt
 example uses exactly this — see [its plugin](https://github.com/webtides/element-js-ssr-renderer/tree/main/examples/nuxt).
 
+### Nested folders and tags that don't match the filename
+
+Directory mode is flat by default. For nested layouts (`components/<name>/<name>.js`), pass
+`--recursive` / `-r` on the CLI or `recursive: true` programmatically.
+
+When the tag doesn't match the basename at all — element-js projects registering via
+`defineElement('mb-icon', Icon)` in `icon.js` — the programmatic `tag` hook overrides the convention per
+file. It receives `{ path, relativePath, basename, source }` (`source` reads the file lazily) and returns
+the tag, an array of tags for a multi-element file, `[]` to skip the file, or `null`/`undefined` to fall
+back to the basename convention:
+
+```js
+import { buildCatalog } from "@webtides/element-js-ssr-renderer/generate";
+
+buildCatalog({
+  dir: "./src/components",
+  out: "./catalog.js",
+  recursive: true,
+  // read the tag out of the framework's own registration call
+  tag: ({ source }) =>
+    source.match(/defineElement\(["']([^"']+)["']/)?.[1] ?? null,
+});
+```
+
+The hook keeps the decision in your build script — the generator itself never guesses at source contents.
+Whatever the hook returns is validated (a custom-element name is lower-case and contains a hyphen); an
+invalid tag is skipped **with a warning**, never silently.
+
 ## Which catalog for which environment
 
 | Deployment                                                              | Supply `resolve` as                                         | Tooling     |
