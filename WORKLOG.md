@@ -21,6 +21,13 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-09-01 — Release 0.3.0
+
+**Tasks:** T-025, T-026, T-027, T-028
+
+- Released 0.3.0: the second wave of production-integration issues (#9–#12) — resolver failure isolation, `<html lang>` adoption, `lockdownFetch`, page-level transform pipeline.
+- Same flow as 0.2.0: version bump on `main`, tag `v0.3.0` — `npm-publish.yml` tests, publishes via OIDC trusted publishing, creates the GitHub Release.
+
 ## 2026-09-01 — Page-level transform pipeline (T-028, issue #12)
 
 **Tasks:** T-028
