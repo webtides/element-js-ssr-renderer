@@ -21,6 +21,13 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-09-01 — Release 0.4.0
+
+**Tasks:** T-009, T-029
+
+- Released 0.4.0: the last two production-integration issues (#7, #8) — async property provider + progressive hydration (loading declarations, `ejs-loading`, the `./autoloader` subpath).
+- Same flow as 0.3.0: version bump on `main`, tag `v0.4.0` — `npm-publish.yml` tests, publishes via OIDC trusted publishing, creates the GitHub Release.
+
 ## 2026-09-01 — Progressive hydration: loading declaration + autoloader (T-029, issue #8)
 
 **Tasks:** T-029
