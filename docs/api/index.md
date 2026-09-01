@@ -57,7 +57,7 @@ glob(
   map: { [key: string]: () => Promise<unknown> },
   options?: {
     pathToTag?: (key: string) => string,
-    pick?: (mod: object, tag: string) => CustomElementConstructor,
+    pick?: (module: object, tag: string) => CustomElementConstructor,
   },
 ): ResolveFn
 ```
@@ -229,7 +229,7 @@ adapters.
 ### `transforms`
 
 ```ts
-type PageTransform = (html: string, ctx: object) => string | Promise<string>;
+type PageTransform = (html: string, context: object) => string | Promise<string>;
 
 transforms?: { pre?: PageTransform | PageTransform[], post?: PageTransform | PageTransform[] };
 ```
@@ -239,7 +239,7 @@ anti-FOUC cloaking block, extracting an inline config, inlining SVG sprite symbo
 `<html data-ssr>` marker. None of it belongs in the renderer (it's project protocol), but the **shape** is
 always the same, so the renderer provides the pipeline: `pre` transforms run once on the input **before**
 any component rendering, `post` transforms once on the final output **after** the resolution fixpoint —
-each `(html, ctx) => html`, sync or async, in array order. This matters most with the
+each `(html, context) => html`, sync or async, in array order. This matters most with the
 [adapters](#elementssr-options), where you don't control the render call site: `transforms` is the one
 canonical place to hang that glue, portable across frameworks.
 
@@ -253,12 +253,12 @@ await renderToString(html, {
 });
 ```
 
-`ctx` is a shared per-render plain object: transforms stash values on it for one another and read what the
-renderer publishes. The renderer owns one key — before the first `post` transform runs it sets `ctx.tags`
+`context` is a shared per-render plain object: transforms stash values on it for one another and read what the
+renderer publishes. The renderer owns one key — before the first `post` transform runs it sets `context.tags`
 to what the render did:
 
 ```ts
-ctx.tags: {
+context.tags: {
   resolved: string[];   // tags rendered on this page
   unresolved: string[]; // custom-element-looking tags no source resolved
   excluded: string[];   // tags declared client-only via `exclude`
@@ -269,8 +269,10 @@ ctx.tags: {
 ```js
 // e.g. stamp the page only when SSR actually did something — the client can
 // tell a transformed page from a fallback
-const markSsr = (html, ctx) =>
-  ctx.tags.resolved.length > 0 ? html.replace("<html", "<html data-ssr") : html;
+const markSsr = (html, context) =>
+  context.tags.resolved.length > 0
+    ? html.replace("<html", "<html data-ssr")
+    : html;
 ```
 
 Two guarantees, both deliberate:

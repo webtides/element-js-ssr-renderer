@@ -14,7 +14,7 @@ const GLOBAL_STYLE_SELECTOR = 'style, link[rel~="stylesheet"]';
  * Coerce a raw attribute string into the value a property expects, mirroring element-js'
  * attribute parsing. A bare boolean attribute (`<el-button outline>`) becomes `true`.
  * @param {string | null} raw
- * @param {*} fallback - the property's default value, used to detect boolean props
+ * @param {*} fallback - the property's default value, used to detect boolean properties
  * @return {*}
  */
 function coerceAttribute(raw, fallback) {
@@ -87,12 +87,12 @@ function renderComponent(Constructor, attributes, serialize, node, entry) {
 
   const defaults =
     typeof instance.properties === "function" ? instance.properties() : {};
-  const props = { ...defaults };
+  const properties = { ...defaults };
   for (const [name, raw] of Object.entries(attributes)) {
-    const propName = dashToCamel(name);
-    props[propName] = coerceAttribute(raw, defaults[propName]);
+    const propertyName = dashToCamel(name);
+    properties[propertyName] = coerceAttribute(raw, defaults[propertyName]);
   }
-  Object.assign(instance, props);
+  Object.assign(instance, properties);
 
   const template =
     typeof instance.template === "function" ? instance.template() : undefined;
@@ -291,14 +291,14 @@ function isEmptyTemplate(markup) {
 /**
  * Recursively walk a node-html-parser tree, pre-rendering every registered custom element in place.
  * @param {import('node-html-parser').Node} node
- * @param {TransformContext} ctx
+ * @param {TransformContext} context
  */
-function transformNode(node, ctx) {
+function transformNode(node, context) {
   for (const child of [...node.childNodes]) {
     if (child.nodeType !== NodeType.ELEMENT_NODE) continue;
 
     const tag = child.rawTagName?.toLowerCase();
-    const entry = tag ? ctx.resolved[tag] : undefined;
+    const entry = tag ? context.resolved[tag] : undefined;
     const Constructor = entry?.Constructor;
 
     if (Constructor) {
@@ -311,12 +311,12 @@ function transformNode(node, ctx) {
         rendered = renderComponent(
           Constructor,
           child.attributes ?? {},
-          ctx.serializeState,
+          context.serializeState,
           child,
           entry,
         );
       } catch (error) {
-        ctx.onError?.(tag, error);
+        context.onError?.(tag, error);
       }
 
       // Components with an empty template (behavioral wrappers) fall through untouched, exactly
@@ -337,14 +337,14 @@ function transformNode(node, ctx) {
         // Only components with actual serializable state are stamped — keys stay in lockstep with
         // the state map, and components with nothing to restore add no noise.
         if (
-          ctx.serializeState &&
+          context.serializeState &&
           serializedState &&
           Object.keys(serializedState).length > 0
         ) {
-          const key = `${tag}-${ctx.keyCounter.n++}`;
+          const key = `${tag}-${context.keyCounter.n++}`;
           child.setAttribute("ejs:key", key);
-          ctx.stateMap[key] = serializedState;
-          collectStores(serializedState, ctx.stateMap, ctx.storeKeys);
+          context.stateMap[key] = serializedState;
+          collectStores(serializedState, context.stateMap, context.storeKeys);
         }
 
         if (shadow) {
@@ -356,7 +356,7 @@ function transformNode(node, ctx) {
           // than once) — repeats across instances are inherent and stay.
           const seen = new Set();
           const adopted = selectAdoptedStyles(
-            ctx.globalStyles,
+            context.globalStyles,
             adoptGlobalStyles,
           )
             .filter((html) => !seen.has(html) && seen.add(html))
@@ -372,12 +372,12 @@ function transformNode(node, ctx) {
             PARSE_OPTIONS,
           );
           const templateNode = shadowFragment.childNodes[0];
-          transformNode(templateNode, ctx);
+          transformNode(templateNode, context);
           templateNode.parentNode = child;
 
           // Transform any custom elements in the authored slot content while it is still
           // `child`'s children, then move it after the shadow template.
-          transformNode(child, ctx);
+          transformNode(child, context);
           const slotted = child.childNodes;
           child.childNodes = [templateNode, ...slotted];
           continue;
@@ -389,10 +389,13 @@ function transformNode(node, ctx) {
         // ahead of the markup — but only once per id across the document, since light styles are
         // global and element-js de-dupes them by id on hydration anyway.
         const styleTags =
-          ownStyleTags(injectedEntries, `${idBase}-SSR`, ctx.lightStyleIds) +
-          ownStyleTags(styleEntries, idBase, ctx.lightStyleIds);
+          ownStyleTags(
+            injectedEntries,
+            `${idBase}-SSR`,
+            context.lightStyleIds,
+          ) + ownStyleTags(styleEntries, idBase, context.lightStyleIds);
         const fragment = parse(styleTags + markup, PARSE_OPTIONS);
-        transformNode(fragment, ctx);
+        transformNode(fragment, context);
         for (const fragmentChild of fragment.childNodes)
           fragmentChild.parentNode = child;
         child.childNodes = fragment.childNodes;
@@ -403,8 +406,8 @@ function transformNode(node, ctx) {
     // Reached for plain tags, registered wrappers with an empty template, components whose render
     // threw (isolated above), and unresolved custom elements. Only the last — a hyphenated tag
     // with no constructor — is reported as unresolved.
-    if (!Constructor && tag?.includes("-")) ctx.onUnresolved?.(tag);
-    transformNode(child, ctx);
+    if (!Constructor && tag?.includes("-")) context.onUnresolved?.(tag);
+    transformNode(child, context);
   }
 }
 
@@ -500,12 +503,12 @@ function defaultResolveErrorReport(tag, error) {
 }
 
 /**
- * A **page-level transform** (T-028): `(html, ctx) => html`, sync or async. `pre` transforms run
+ * A **page-level transform** (T-028): `(html, context) => html`, sync or async. `pre` transforms run
  * once on the input before any component rendering; `post` transforms run once on the final
  * output after the resolution fixpoint converged. Each receives the previous transform's result
  * (array order) plus the shared per-render {@link PageTransformContext}. String in, string out —
  * no AST or DOM API is promised.
- * @typedef {(html: string, ctx: PageTransformContext) => string | Promise<string>} PageTransform
+ * @typedef {(html: string, context: PageTransformContext) => string | Promise<string>} PageTransform
  */
 
 /**
@@ -561,12 +564,12 @@ function normalizeTransforms(transforms) {
  * @param {PageTransform[]} list
  * @param {"pre" | "post"} phase
  * @param {string} html
- * @param {PageTransformContext} ctx
+ * @param {PageTransformContext} context
  * @return {Promise<string>}
  */
-async function applyTransforms(list, phase, html, ctx) {
+async function applyTransforms(list, phase, html, context) {
   for (const transform of list) {
-    const result = await transform(html, ctx);
+    const result = await transform(html, context);
     if (typeof result !== "string")
       throw new TypeError(
         `[element-js-ssr-renderer] \`transforms.${phase}\` transform ` +
@@ -687,8 +690,8 @@ function defaultPathToTag(key) {
 }
 
 /** Default module→class pick: the `default` export, or the value itself if it's already a class. */
-function defaultPick(mod) {
-  return mod?.default ?? mod;
+function defaultPick(module) {
+  return module?.default ?? module;
 }
 
 /**
@@ -786,9 +789,9 @@ function catalogToResolver(catalog) {
       if (!cache.has(tag))
         cache.set(
           tag,
-          Promise.resolve(value.component()).then((mod) => ({
+          Promise.resolve(value.component()).then((module) => ({
             ...value,
-            component: defaultPick(mod),
+            component: defaultPick(module),
           })),
         );
       return cache.get(tag);
@@ -807,7 +810,7 @@ function catalogToResolver(catalog) {
  * `resolve` without it.
  *
  * @param {Object<string, () => Promise<unknown>>} map
- * @param {{ pathToTag?: (key: string) => string, pick?: (mod: object, tag: string) => CustomElementConstructor }} [options]
+ * @param {{ pathToTag?: (key: string) => string, pick?: (module: object, tag: string) => CustomElementConstructor }} [options]
  *   `pathToTag` derives a tag from each map key (default: basename without extension). `pick` selects
  *   the class from a resolved module (default: its `default` export).
  * @return {(tag: string) => Promise<CustomElementConstructor> | undefined}
@@ -827,7 +830,7 @@ export function glob(
     if (!cache.has(tag))
       cache.set(
         tag,
-        Promise.resolve(importer()).then((mod) => pick(mod, tag)),
+        Promise.resolve(importer()).then((module) => pick(module, tag)),
       );
     return cache.get(tag);
   };
@@ -910,8 +913,8 @@ function composeSources(sources) {
  * `transforms` hangs **page-level** processing onto the render (T-028): `pre` transforms run once
  * on the input before any component rendering (strip a cloaking block, extract config), `post`
  * transforms once on the final output (inline sprite symbols, stamp a page marker) — each
- * `(html, ctx) => html`, sync or async, in array order, sharing one {@link PageTransformContext}
- * per render. The renderer sets `ctx.tags` (resolved/unresolved/excluded/failed) before the first
+ * `(html, context) => html`, sync or async, in array order, sharing one {@link PageTransformContext}
+ * per render. The renderer sets `context.tags` (resolved/unresolved/excluded/failed) before the first
  * `post` transform. Unlike per-component errors, a throwing transform fails the render loudly —
  * broken page-level glue means broken output, and callers have a fallback path for exactly that.
  *
@@ -952,7 +955,7 @@ export async function renderToString(
   setSerializeStateConfig(serializeState);
   // Validated up front: a transforms config mistake must fail immediately, not mid-render.
   const { pre, post } = normalizeTransforms(transforms);
-  const ctx = {}; // the shared PageTransformContext, one per render
+  const transformContext = {}; // the shared PageTransformContext, one per render
   const sources =
     resolve == null ? [] : Array.isArray(resolve) ? resolve : [resolve];
   const resolver = composeSources(sources);
@@ -979,7 +982,7 @@ export async function renderToString(
   try {
     // Page-level `pre` transforms (T-028) run once, on the input — the fixpoint passes below
     // re-render from their result, so injected/stripped markup is what components see.
-    html = await applyTransforms(pre, "pre", html, ctx);
+    html = await applyTransforms(pre, "pre", html, transformContext);
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
@@ -1015,15 +1018,15 @@ export async function renderToString(
           reportResolveError(tag, error);
         for (const [tag, error] of errors) reportError(tag, error);
 
-        // What the render did, for the `post` transforms (renderer-owned ctx key, T-028) — e.g.
+        // What the render did, for the `post` transforms (renderer-owned context key, T-028) — e.g.
         // stamp a page marker only if something rendered, emit preloads for resolved tags.
-        ctx.tags = {
+        transformContext.tags = {
           resolved: Object.keys(resolved),
           unresolved: [...misses].filter((tag) => !resolveErrors.has(tag)),
           excluded: [...excludedTags],
           failed: [...resolveErrors.keys(), ...errors.keys()],
         };
-        return await applyTransforms(post, "post", out, ctx);
+        return await applyTransforms(post, "post", out, transformContext);
       }
 
       for (const tag of fresh) attempted.add(tag);

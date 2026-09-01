@@ -342,7 +342,7 @@ describe("renderToString — resolution sources", () => {
     const out = await renderToString("<el-button>x</el-button>", {
       resolve: glob(
         { "buttons/Btn.entry": () => Promise.resolve({ Btn: Button }) },
-        { pathToTag: () => "el-button", pick: (mod) => mod.Btn },
+        { pathToTag: () => "el-button", pick: (module) => module.Btn },
       ),
     });
     expect(out).toContain("shadowrootmode");
@@ -1024,20 +1024,20 @@ describe("page-level transforms", () => {
     expect(out).toBe("<p>x</p><!--pre--><!--post-->");
   });
 
-  it("shares one ctx object between pre and post transforms", async () => {
+  it("shares one context object between pre and post transforms", async () => {
     const out = await renderToString("<p></p>", {
       transforms: {
-        pre: (input, ctx) => {
-          ctx.stash = "from-pre";
+        pre: (input, context) => {
+          context.stash = "from-pre";
           return input;
         },
-        post: (rendered, ctx) => rendered + `<!--${ctx.stash}-->`,
+        post: (rendered, context) => rendered + `<!--${context.stash}-->`,
       },
     });
     expect(out).toContain("<!--from-pre-->");
   });
 
-  it("exposes the render's tag info as ctx.tags to post transforms", async () => {
+  it("exposes the render's tag info as context.tags to post transforms", async () => {
     let tags;
     await renderToString(
       "<el-button>a</el-button><x-unknown></x-unknown>" +
@@ -1051,8 +1051,8 @@ describe("page-level transforms", () => {
         onError: () => {},
         onUnresolved: () => {},
         transforms: {
-          post: (rendered, ctx) => {
-            tags = ctx.tags;
+          post: (rendered, context) => {
+            tags = context.tags;
             return rendered;
           },
         },

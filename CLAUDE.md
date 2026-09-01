@@ -2,6 +2,10 @@
 
 Server-side rendering for `@webtides/element-js` custom elements. See `README.md` for what the package does and how to use it.
 
+## Conventions
+
+- **No abbreviated identifiers.** Write full words everywhere — API surface, internals, docs, examples. `attributes` not `attrs`, `context` not `ctx`, `options` not `opts`. (Names dictated from outside, like element-js' own APIs, are exempt.)
+
 ## Agent workflow
 
 This project uses a structured workflow that all agents must follow.
