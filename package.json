@@ -10,6 +10,7 @@
   },
   "exports": {
     ".": "./src/index.js",
+    "./autoloader": "./src/autoloader.js",
     "./dom-shim": "./src/dom-shim.js",
     "./astro": "./src/adapters/astro.js",
     "./eleventy": "./src/adapters/eleventy.js",
@@ -46,6 +47,7 @@
   "devDependencies": {
     "@webtides/element-js": "^1.2.11",
     "@webtides/element-library": "^0.1.2",
+    "happy-dom": "^20.12.0",
     "vitepress": "^1.6.4",
     "vitest": "^4.0.0"
   }

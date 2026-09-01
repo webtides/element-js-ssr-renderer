@@ -15,6 +15,7 @@ Full documentation lives at **<https://webtides.github.io/element-js-ssr-rendere
 
 - [Introduction & how it works](https://webtides.github.io/element-js-ssr-renderer/guide/introduction)
 - [Resolving components](https://webtides.github.io/element-js-ssr-renderer/resolving-components) — eager vs. lazy, multiple sources
+- [Progressive hydration](https://webtides.github.io/element-js-ssr-renderer/progressive-hydration) — per-component `loading` declarations + the client autoloader
 - [Framework integrations](https://webtides.github.io/element-js-ssr-renderer/frameworks/) — Node/Express, Astro, SvelteKit, Nuxt, Vite, Eleventy
 - [API reference](https://webtides.github.io/element-js-ssr-renderer/api/)
 

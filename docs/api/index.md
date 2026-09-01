@@ -144,6 +144,7 @@ type ComponentConfig = {
   component: CustomElementConstructor | (() => Promise<unknown>);
   styles?: string | string[];
   adoptGlobalStyles?: boolean | string | string[];
+  loading?: Loading;
 };
 ```
 
@@ -156,6 +157,7 @@ component and poking element-js internals (`_styles` / `_options`). Also valid a
 | `component`         | The eager class or lazy loader, exactly like a bare Catalog value. The key is deliberately **not** `constructor` — every plain object already resolves `constructor` through its prototype chain, which would make detection (and a forgotten key) ambiguous.                                                       |
 | `styles`            | CSS injected **ahead of the component's own styles**: into the Declarative Shadow DOM template (after adopted globals) for shadow components, inlined before the markup for light-DOM ones. The hook for build-time per-component CSS (Tailwind utility subsets, critical CSS), styling DSD content at first paint. |
 | `adoptGlobalStyles` | Overrides the instance's element-js option at render time (`true` \| `false` \| selector \| selectors).                                                                                                                                                                                                             |
+| `loading`           | The component's [progressive-hydration loading declaration](/progressive-hydration) (`'server'` \| `'client'` \| `'hydrate:<trigger>'`), stamped as `ejs-loading` on each host element; overrides the class's own `static loading`.                                                                                 |
 
 Injected styles are emitted under a renderer-owned `TAGNAME-SSR{index}` id-space (e.g. `EL-BUTTON-SSR0`), so
 element-js' own `TAGNAME{index}` hydration ids — and their client-side de-dup — stay untouched. For light-DOM
@@ -417,16 +419,61 @@ It is deliberately **opt-in** and unrelated to importing the dom-shim itself —
 Node global, and replacing it is a policy decision the consumer makes explicitly, typically once in the
 server entry right after the shim import.
 
+## `autoload(options?)`
+
+From `@webtides/element-js-ssr-renderer/autoloader` — **client code**, the only browser-side export of the
+package (zero dependencies, tree-shakes away from server bundles). The client mirror of `resolve`: it takes
+the same [`Catalog`](#catalog) shapes, discovers the catalog's custom elements on the page, and defines each
+tag according to its `ejs-loading` attribute — the marker the renderer stamps from a component's `loading`
+declaration. See [Progressive hydration](/progressive-hydration) for the full picture.
+
+```ts
+autoload(options: {
+  resolve: Catalog | Catalog[],
+  eager?: boolean,
+  root?: Element | Document,
+}): { load: (tag: string) => Promise<void>, stop: () => void }
+```
+
+| Param             | Description                                                                                                                                                                                                                                                      |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `options.resolve` | The same [`Catalog`](#catalog) shapes the server takes — tag or path keys, eager classes or lazy loaders, [`ComponentConfig`](#componentconfig) values unwrapped — or an array (later wins). **Not** a resolver function: discovery needs an enumerable tag set. |
+| `options.eager`   | Load every discovered tag immediately, ignoring `ejs-loading` (including `server` — on a page that was **not** server-rendered, nothing pre-rendered exists, so everything must load). Default `false`.                                                          |
+| `options.root`    | The subtree to discover and observe. Default `document`.                                                                                                                                                                                                         |
+
+**Returns** `{ load, stop }`: `load(tag)` triggers a tag's load by hand (cached; resolves after define, also
+on a failed load — failures are reported, not thrown); `stop()` disconnects discovery and the trigger
+observers (already-scheduled timers and idle callbacks still fire).
+
+- Discovery is an initial scan plus a `MutationObserver`, so elements parsed or inserted later (streaming
+  HTML, client-side navigation, re-rendered CMS markup) are picked up too.
+- Each tag loads **at most once** — the first trigger of any instance wins, `customElements.define` then
+  upgrades every instance at once. Already-defined tags are never touched.
+- Loading a tag = call its catalog loader, then `customElements.define(tag, module.default)` — unless the
+  module already defined the tag itself (a `define`-style side-effect module).
+- A failing loader is isolated per tag: reported via `console.error`, never retried, other tags unaffected.
+- An unknown `ejs-loading` value (or an invalid `onMedia` query) **fails open** — warn and load
+  immediately: a typo must degrade to eager loading, never to a component that silently never loads.
+- Hydration is not its job: the elements already stand fully rendered as Declarative Shadow DOM; element-js
+  hydrates them on upgrade. The autoloader only decides **when** each tag's module loads.
+
+The subpath also exports the `Loading` type for typed `static loading` declarations — see
+[Progressive hydration](/progressive-hydration#typed-declarations).
+
 ## Subpath exports
 
-| Import                                        | Exports                                                                  |
-| --------------------------------------------- | ------------------------------------------------------------------------ |
-| `@webtides/element-js-ssr-renderer`           | `renderToString`, `glob`                                                 |
-| `@webtides/element-js-ssr-renderer/dom-shim`  | DOM globals shim (side-effect import); `lockdownFetch`                   |
-| `@webtides/element-js-ssr-renderer/astro`     | `elementSSR` (Astro middleware)                                          |
-| `@webtides/element-js-ssr-renderer/nuxt`      | `elementSSR` (Nitro `render:response` handler)                           |
-| `@webtides/element-js-ssr-renderer/sveltekit` | `elementSSR` (SvelteKit `handle` hook)                                   |
-| `@webtides/element-js-ssr-renderer/generate`  | `buildCatalog`, `catalogEntriesFromDirectory`, … (build-time, Node-only) |
+| Import                                         | Exports                                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------------------ |
+| `@webtides/element-js-ssr-renderer`            | `renderToString`, `glob`                                                 |
+| `@webtides/element-js-ssr-renderer/autoloader` | `autoload`, `Loading` type (client-side, zero dependencies)              |
+| `@webtides/element-js-ssr-renderer/dom-shim`   | DOM globals shim (side-effect import); `lockdownFetch`                   |
+| `@webtides/element-js-ssr-renderer/astro`      | `elementSSR` (Astro middleware)                                          |
+| `@webtides/element-js-ssr-renderer/nuxt`       | `elementSSR` (Nitro `render:response` handler)                           |
+| `@webtides/element-js-ssr-renderer/sveltekit`  | `elementSSR` (SvelteKit `handle` hook)                                   |
+| `@webtides/element-js-ssr-renderer/node`       | `elementSSR` (Node `(req, res, next)` middleware)                        |
+| `@webtides/element-js-ssr-renderer/vite`       | `elementSSR` (Vite plugin, `transformIndexHtml`)                         |
+| `@webtides/element-js-ssr-renderer/eleventy`   | `elementSSR` (Eleventy transform)                                        |
+| `@webtides/element-js-ssr-renderer/generate`   | `buildCatalog`, `catalogEntriesFromDirectory`, … (build-time, Node-only) |
 
 ## `element-js-ssr-renderer` CLI
 

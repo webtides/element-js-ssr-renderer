@@ -21,6 +21,15 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-09-01 — Progressive hydration: loading declaration + autoloader (T-029, issue #8)
+
+**Tasks:** T-029
+
+- Fixed GH issue #8: components declare `static loading = 'server' | 'client' | 'hydrate:<trigger>'` (or a `loading` field on `ComponentConfig`, which wins); the renderer stamps it as the advisory `ejs-loading` attribute on each host element — a hand-authored attribute in the source markup always wins. No declaration → no attribute. Invalid values isolated via the resolve-error channel; the attribute is kept out of the property merge/serialized state.
+- New `./autoloader` subpath (client code, zero dependencies): `autoload({ resolve, eager?, root? })` — the client mirror of `resolve`, same Catalog shapes. Discovers catalog tags (scan + MutationObserver), loads each tag at most once, skips `server`, defines `client` immediately, defers `hydrate:onIdle | onVisible | onDelay(ms) | onMedia(query)`; unknown values and invalid media queries fail open (warn + load). `eager: true` = non-SSR fallback (loads everything, `server` included); the `data-ssr` gate stays a consumer recipe. Exports a template-literal `Loading` typedef for typed declarations.
+- Deliberately deferred: `&&`/`||` trigger combinators and `onInteraction` with event replay.
+- +29 tests (9 renderer, 20 autoloader — new happy-dom test environment for client code; happy-dom devDep), suite at 184. Docs: new "Progressive hydration" page, API `autoload` section + ComponentConfig `loading` + completed subpath table, limitations (v1 trigger scope, stale roadmap entries removed), README.
+
 ## 2026-09-01 — Async property provider (T-009, issue #7)
 
 **Tasks:** T-009

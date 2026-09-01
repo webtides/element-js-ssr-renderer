@@ -42,6 +42,7 @@ export default defineConfig({
         text: "Loading & resolving",
         items: [
           { text: "Resolving components", link: "/resolving-components" },
+          { text: "Progressive hydration", link: "/progressive-hydration" },
         ],
       },
       {

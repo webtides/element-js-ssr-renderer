@@ -1350,3 +1350,126 @@ describe("async property provider (properties)", () => {
     ).rejects.toThrow(/did not converge/);
   });
 });
+
+// Components exercising the progressive-hydration loading declaration (T-029).
+class LazyWidget extends TemplateElement {
+  static loading = "hydrate:onVisible";
+  template() {
+    return html`<span>lazy</span>`;
+  }
+}
+class InvalidLoading extends TemplateElement {
+  static loading = "lazy";
+  template() {
+    return html`<span>bad</span>`;
+  }
+}
+// Behavioral wrapper: inherits the empty template, still declares when its JS loads.
+class LoadingWrapper extends TemplateElement {
+  static loading = "hydrate:onIdle";
+}
+class LoadingNest extends TemplateElement {
+  template() {
+    return html`<x-lazy-widget></x-lazy-widget>`;
+  }
+}
+class StatefulLazy extends TemplateElement {
+  static loading = "hydrate:onIdle";
+  properties() {
+    return { count: 0 };
+  }
+  template() {
+    return html`<span>${this.count}</span>`;
+  }
+}
+
+describe("progressive hydration (loading declaration)", () => {
+  const loadingCatalog = {
+    "x-lazy-widget": LazyWidget,
+    "x-loading-wrapper": LoadingWrapper,
+    "x-loading-nest": LoadingNest,
+    "x-stateful-lazy": StatefulLazy,
+  };
+
+  it("stamps `static loading` as the ejs-loading attribute on the host", async () => {
+    const out = await renderToString("<x-lazy-widget></x-lazy-widget>", {
+      resolve: loadingCatalog,
+    });
+    expect(out).toContain('ejs-loading="hydrate:onVisible"');
+    expect(out).toContain("<span>lazy</span>");
+  });
+
+  it("stamps no attribute when nothing is declared", async () => {
+    const out = await render("<el-button>Save</el-button>");
+    expect(out).not.toContain("ejs-loading");
+  });
+
+  it("leaves a hand-authored ejs-loading attribute alone (HTML wins)", async () => {
+    const out = await renderToString(
+      '<x-lazy-widget ejs-loading="client"></x-lazy-widget>',
+      { resolve: loadingCatalog },
+    );
+    expect(out).toContain('ejs-loading="client"');
+    expect(out).not.toContain("hydrate:onVisible");
+  });
+
+  it("lets a ComponentConfig `loading` override the class's static declaration", async () => {
+    const out = await renderToString("<x-lazy-widget></x-lazy-widget>", {
+      resolve: {
+        "x-lazy-widget": { component: LazyWidget, loading: "server" },
+      },
+    });
+    expect(out).toContain('ejs-loading="server"');
+  });
+
+  it("declares loading from outside via ComponentConfig for a class without a static", async () => {
+    const out = await renderToString("<el-button>Save</el-button>", {
+      resolve: {
+        "el-button": { component: Button, loading: "hydrate:onIdle" },
+      },
+    });
+    expect(out).toContain('ejs-loading="hydrate:onIdle"');
+  });
+
+  it("stamps empty-template wrappers too — their behavior JS still loads per declaration", async () => {
+    const out = await renderToString(
+      "<x-loading-wrapper><p>authored</p></x-loading-wrapper>",
+      { resolve: loadingCatalog },
+    );
+    expect(out).toContain('ejs-loading="hydrate:onIdle"');
+    expect(out).toContain("<p>authored</p>");
+  });
+
+  it("stamps components that only appear in a generated template", async () => {
+    const out = await renderToString("<x-loading-nest></x-loading-nest>", {
+      resolve: loadingCatalog,
+    });
+    expect(out).toContain('<x-lazy-widget ejs-loading="hydrate:onVisible"');
+  });
+
+  it("isolates an invalid loading declaration like a resolve failure", async () => {
+    const onError = vi.fn();
+    const out = await renderToString(
+      "<x-invalid-loading></x-invalid-loading><x-lazy-widget></x-lazy-widget>",
+      {
+        resolve: { ...loadingCatalog, "x-invalid-loading": InvalidLoading },
+        onError,
+      },
+    );
+    expect(out).toContain("<x-invalid-loading></x-invalid-loading>");
+    expect(out).toContain("<span>lazy</span>");
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0]).toBe("x-invalid-loading");
+    expect(onError.mock.calls[0][1].message).toMatch(/invalid `loading` value/);
+  });
+
+  it("keeps the ejs-loading attribute out of properties and serialized state", async () => {
+    const out = await renderToString(
+      '<x-stateful-lazy count="2"></x-stateful-lazy>',
+      { resolve: loadingCatalog, serializeState: true },
+    );
+    expect(out).toContain('ejs-loading="hydrate:onIdle"');
+    expect(out).toContain('"count":2');
+    expect(out).not.toContain("ejsLoading");
+  });
+});

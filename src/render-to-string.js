@@ -11,6 +11,14 @@ const PARSE_OPTIONS = { comment: true };
 const GLOBAL_STYLE_SELECTOR = 'style, link[rel~="stylesheet"]';
 
 /**
+ * The attribute carrying a component's loading declaration in the SSR output (T-029) — advisory
+ * metadata for the client autoloader (`…/autoloader`), never a component property. Dash, not the
+ * `ejs:key` colon: this is an author-facing attribute (hand-written overrides, CSS selectors —
+ * colon attributes need escaping in every selector), where `ejs:key` is machine-written only.
+ */
+const LOADING_ATTRIBUTE = "ejs-loading";
+
+/**
  * Coerce a raw attribute string into the value a property expects, mirroring element-js'
  * attribute parsing. A bare boolean attribute (`<el-button outline>`) becomes `true`.
  * @param {string | null} raw
@@ -101,6 +109,9 @@ function renderComponent(
   // because they are explicit in the source markup.
   const properties = { ...defaults, ...providedProperties };
   for (const [name, raw] of Object.entries(attributes)) {
+    // Renderer/autoloader metadata, not a component property — without this it would land on the
+    // instance as `ejsLoading` and leak into serialized state.
+    if (name === LOADING_ATTRIBUTE) continue;
     const propertyName = dashToCamel(name);
     // The boolean-detection fallback reads the merged value, so a boolean property that only the
     // provider introduced still gets bare-attribute coercion (`<x-el open>` → `true`).
@@ -330,6 +341,16 @@ function transformNode(node, context) {
     const Constructor = entry?.Constructor;
 
     if (Constructor) {
+      // Progressive hydration (T-029): stamp the component's declared loading strategy as the
+      // advisory `ejs-loading` attribute for the client autoloader. An attribute already authored
+      // in the source markup wins (override chain: HTML attribute > ComponentConfig > static
+      // `loading` > default `client` = no attribute). Stamped before rendering, so empty-template
+      // wrappers and provider/render-failed elements carry it too — their JS still loads per
+      // declaration client-side — and stamped at the same point every pass, so provider instance
+      // keys (which include the markup) stay stable across the fixpoint.
+      if (entry.loading != null && !child.hasAttribute(LOADING_ATTRIBUTE))
+        child.setAttribute(LOADING_ATTRIBUTE, entry.loading);
+
       // Property provider (T-009): with a provider configured, every instance needs its provider
       // result before it can render. The instance is identified by its parsed markup — each pass
       // re-parses the same input, so results fetched between passes are found again, and identical
@@ -782,15 +803,44 @@ function runTransform(
  *     under a renderer-owned `TAGNAME-SSR{index}` id-space so element-js' own `TAGNAME{index}`
  *     hydration ids (and their client-side de-dup) stay untouched.
  *   - **`adoptGlobalStyles`** — overrides the instance's element-js option at render time.
+ *   - **`loading`** — the component's loading declaration for progressive hydration (T-029),
+ *     stamped as `ejs-loading` on each host element; overrides the class's own `static loading`.
+ *     See {@link https://webtides.github.io/element-js-ssr-renderer/progressive-hydration}.
  * The key is `component` — deliberately not `constructor`, which every plain object already
  * resolves through its prototype chain, making detection (and forgetting the key) ambiguous.
- * @typedef {{ component: CustomElementConstructor | (() => Promise<unknown>), styles?: string | string[], adoptGlobalStyles?: boolean | string | string[] }} ComponentConfig
+ * @typedef {{ component: CustomElementConstructor | (() => Promise<unknown>), styles?: string | string[], adoptGlobalStyles?: boolean | string | string[], loading?: string }} ComponentConfig
  */
 
 /**
  * The uniform shape the transform renders against, normalized from whatever a source yielded.
- * @typedef {{ Constructor: CustomElementConstructor, injected?: {index: number, css: string}[], adoptGlobalStyles?: boolean | string | string[] }} ResolvedEntry
+ * @typedef {{ Constructor: CustomElementConstructor, injected?: {index: number, css: string}[], adoptGlobalStyles?: boolean | string | string[], loading?: string }} ResolvedEntry
  */
+
+/**
+ * Validate a component's loading declaration (T-029) — from a `static loading` field or a
+ * {@link ComponentConfig} — against the coarse shape only: `server`, `client`, or `hydrate:` plus
+ * any trigger. The trigger itself is deliberately NOT validated here — triggers are client
+ * territory (the autoloader evaluates them, warns on unknown ones, and may grow new ones without
+ * a renderer release). An invalid value throws, naming the tag; `renderToString` isolates it like
+ * any other resolve failure (T-025), so it surfaces via `onError`, not as a page failure.
+ * @param {*} loading
+ * @param {string} tag
+ * @return {string | undefined}
+ */
+function normalizeLoading(loading, tag) {
+  if (loading == null) return undefined;
+  if (
+    typeof loading !== "string" ||
+    (loading !== "server" &&
+      loading !== "client" &&
+      !loading.startsWith("hydrate:"))
+  )
+    throw new TypeError(
+      `[element-js-ssr-renderer] <${tag}> declares an invalid \`loading\` value ` +
+        `(${JSON.stringify(loading)}) — expected 'server', 'client' or 'hydrate:<trigger>'`,
+    );
+  return loading;
+}
 
 /** Default key→tag mapping: a path's basename without extension (`./x/el-button.js` → `el-button`). */
 function defaultPathToTag(key) {
@@ -848,9 +898,13 @@ function isComponentConfig(value) {
  */
 async function toResolvedEntry(value, tag) {
   if (value == null) return undefined;
-  if (isElementClass(value)) return { Constructor: value };
+  if (isElementClass(value))
+    return {
+      Constructor: value,
+      loading: normalizeLoading(value.loading, tag),
+    };
   if (isComponentConfig(value)) {
-    let { component, styles, adoptGlobalStyles } = value;
+    let { component, styles, adoptGlobalStyles, loading } = value;
     if (typeof component === "function" && !isElementClass(component))
       component = defaultPick(await component());
     if (!isElementClass(component))
@@ -862,7 +916,14 @@ async function toResolvedEntry(value, tag) {
     const injected = (typeof styles === "string" ? [styles] : (styles ?? []))
       .map((css, index) => ({ index, css }))
       .filter(({ css }) => Boolean(css));
-    return { Constructor: component, injected, adoptGlobalStyles };
+    return {
+      Constructor: component,
+      injected,
+      adoptGlobalStyles,
+      // A ComponentConfig `loading` wins over the class's own `static loading` (T-029) — same
+      // outside-the-component override philosophy as `adoptGlobalStyles`.
+      loading: normalizeLoading(loading ?? component.loading, tag),
+    };
   }
   return undefined;
 }
@@ -1026,6 +1087,15 @@ function composeSources(sources) {
  * can read the request; set it yourself when calling `renderToString` directly. Note that
  * provider-seeded properties on components that hydrate need `serializeState: true` — the client
  * cannot re-derive them from attributes.
+ *
+ * A component declaring a **loading strategy** — `static loading = 'server' | 'client' |
+ * 'hydrate:<trigger>'` on the class, or a `loading` field on its {@link ComponentConfig} (which
+ * wins) — is stamped with the advisory `ejs-loading` attribute on each host element (T-029),
+ * unless the source markup already carries it (a hand-authored attribute always wins). The
+ * companion client autoloader (`…/autoloader`) acts on it: skip `server`, define `client`
+ * immediately, defer `hydrate:` tags until their trigger fires. No declaration → no attribute
+ * (the client default is `client`). This adds no option — the declaration travels with the
+ * component through `resolve`.
  *
  * The input's `<html lang>` is adopted onto the dom-shim's `document.documentElement.lang` for the
  * duration of the render (T-026), so components that read it — `Intl` formatting, i18n lookups —

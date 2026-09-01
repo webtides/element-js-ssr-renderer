@@ -8,6 +8,18 @@ bumps may contain behavior changes).
 
 ### Added
 
+- **Progressive hydration** (T-029, #8) — a per-component loading declaration plus a companion client
+  autoloader. Declare `static loading = 'server' | 'client' | 'hydrate:<trigger>'` on the class (or a
+  `loading` field on a `ComponentConfig`, which wins); the renderer stamps it as an advisory `ejs-loading`
+  attribute on each host element — unless the source markup already carries the attribute (HTML wins). The
+  new `@webtides/element-js-ssr-renderer/autoloader` subpath (client code, zero dependencies) is the client
+  mirror of `resolve`: `autoload({ resolve, eager? })` takes the same Catalog shapes, discovers the
+  catalog's elements (initial scan + MutationObserver), never loads `server` tags, defines `client` tags
+  immediately, and defers `hydrate:onIdle | onVisible | onDelay(ms) | onMedia(query)` tags until their
+  trigger fires — each tag at most once, failures isolated per tag, unknown values failing open (warn +
+  load). `eager: true` loads everything immediately (the non-SSR fallback gate, e.g.
+  `!document.documentElement.hasAttribute("data-ssr")`, stays consumer-side). Also exports a
+  template-literal `Loading` type for typed `static loading` declarations via JSDoc.
 - **Async property provider** (T-009, #7) — `properties: ({ tag, node, context }) => object | Promise<object>`
   on `renderToString` and all adapters: seed server-fetched properties (CMS content, database rows, API
   responses) into components before they render, merged over element defaults and under HTML attributes.

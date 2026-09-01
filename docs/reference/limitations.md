@@ -32,17 +32,13 @@
 - **Light-DOM introspection is read-only.** The children/query surface hands the template parsed-HTML nodes —
   a close but not identical Element API, sufficient for the read-only introspection templates do, not for
   mutation or layout measurement.
-- **State transport.** element-js' `ejs:key` / `serializeState` plumbing can carry server state to the
-  client; wiring it through this transformer is on the roadmap (see below).
+- **Progressive-hydration triggers, v1 scope.** The [autoloader](/progressive-hydration) evaluates the four
+  base triggers (`onIdle`, `onVisible`, `onDelay(ms)`, `onMedia(query)`); `&&` / `||` combinators and
+  `hydrate:onInteraction` with event replay are deliberately out of scope for now. Unknown trigger values
+  fail open (warn + load immediately).
 
 ## Roadmap
 
-Tracked in the repo's
-[`TASKS.md`](https://github.com/webtides/element-js-ssr-renderer/blob/main/TASKS.md). Highlights:
-
-- **State transport** (T-007) — assign each rendered component a stable, deterministic `ejs:key`, collect
-  each component's `serializeState()` output into a single `<script type="ejs/json">`, and handle shared
-  `Store` references, so stateful components hydrate with their server-rendered state instead of re-deriving
-  it from property defaults.
-- **Async per-component property provider** (T-009) — an optional hook to supply server-fetched / async props
-  for a component before its SSR render, merged ahead of HTML attributes over element defaults.
+Open work is tracked in the repo's
+[`TASKS.md`](https://github.com/webtides/element-js-ssr-renderer/blob/main/TASKS.md) and the
+[issue tracker](https://github.com/webtides/element-js-ssr-renderer/issues).
