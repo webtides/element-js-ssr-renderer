@@ -104,7 +104,11 @@ function isInside(dir, file) {
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  *   transforms?: { pre?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[], post?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[] },
+ *   properties?: import("../render-to-string.js").PropertyProvider,
  * }} [options]
+ *   A `properties` provider receives Vite's `transformIndexHtml` context (`path`, `filename`,
+ *   `server` in dev, `bundle`/`chunk` at build) as its `context` — there is no request at build
+ *   time, so that per-page object is the per-render context.
  * @return {import('vite').Plugin} a Vite plugin
  */
 export function elementSSR({
@@ -115,6 +119,7 @@ export function elementSSR({
   onError,
   serializeState = false,
   transforms,
+  properties,
 } = {}) {
   // The auto-discovered catalog of this project's own components — rebuilt from `components` on
   // startup and, in dev, whenever a file there is added/removed/edited. A mutable holder so the
@@ -178,7 +183,7 @@ export function elementSSR({
     // authored document, and Vite's injections layer on top of our output afterwards.
     transformIndexHtml: {
       order: "pre",
-      handler: (html) =>
+      handler: (html, viteContext) =>
         renderToString(html, {
           resolve: resolveSources(),
           exclude,
@@ -186,6 +191,10 @@ export function elementSSR({
           onError,
           serializeState,
           transforms,
+          properties,
+          // The property provider's per-page `context` is Vite's transformIndexHtml context
+          // (path, filename, server in dev, bundle/chunk at build).
+          context: viteContext,
         }),
     },
   };

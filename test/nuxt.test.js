@@ -48,3 +48,17 @@ describe("elementSSR (nuxt render:response hook)", () => {
     expect(response.body).toBe(body);
   });
 });
+
+describe("property provider context (nuxt)", () => {
+  it("hands Nitro's H3Event to the property provider as `context`", async () => {
+    const provider = vi.fn(() => null);
+    const onResponse = elementSSR({
+      resolve: { "el-button": Button },
+      properties: provider,
+    });
+    const event = { path: "/" };
+    await onResponse(htmlResponse("<el-button>x</el-button>"), { event });
+    expect(provider).toHaveBeenCalled();
+    expect(provider.mock.calls[0][0].context).toBe(event);
+  });
+});

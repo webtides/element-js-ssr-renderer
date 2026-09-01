@@ -22,6 +22,8 @@ renderToString(
       pre?: PageTransform | PageTransform[],
       post?: PageTransform | PageTransform[],
     },
+    properties?: PropertyProvider,
+    context?: unknown,
   },
 ): Promise<string>
 ```
@@ -32,16 +34,19 @@ renderToString(
 | `options.resolve`        | A [`Catalog`](#catalog) (a `{ tag: … }` map of eager classes and/or lazy loaders, auto-detected) or a [resolver function](#resolvefn) — or an array of either, composed **later-wins** on a tag clash. |
 | `options.exclude`        | Tags to leave client-only: a list (case-insensitive) or a `(tag) => boolean` predicate. See [below](#exclude).                                                                                         |
 | `options.onUnresolved`   | Called once per custom-element-looking tag (contains `-`) that no source resolves. See [below](#onunresolved).                                                                                         |
-| `options.onError`        | Called once per tag whose component threw while rendering or whose resolution failed; the element is left untouched. See [below](#onerror).                                                            |
+| `options.onError`        | Called once per tag whose component threw while rendering, whose resolution failed, or whose property provider failed; the element is left untouched. See [below](#onerror).                           |
 | `options.serializeState` | Opt into [client state transport](#serializestate). Defaults to `false`.                                                                                                                               |
 | `options.transforms`     | Page-level `pre`/`post` transform pipeline around the render. See [below](#transforms).                                                                                                                |
+| `options.properties`     | Async per-instance property provider — seed server-fetched properties before components render. See [below](#properties).                                                                              |
+| `options.context`        | Opaque per-render value handed to every `properties` call; the adapters set their framework's native request object. See [below](#properties).                                                         |
 
 **Returns** a `Promise` of the HTML with every resolved custom element pre-rendered in place.
 
 Resolution and rendering interleave as a fixpoint: each pass renders with the tags resolved so far and reports
-the ones it couldn't resolve; those are resolved in parallel (each module imported once) and the pass repeats
-until nothing new appears. Because it re-renders, it also catches custom elements that appear only inside a
-component's **generated** template, not just in the input.
+the ones it couldn't resolve; those are resolved in parallel (each module imported once, and
+[property-provider](#properties) calls for newly discovered instances run in the same parallel phase) and the
+pass repeats until nothing new appears. Because it re-renders, it also catches custom elements that appear
+only inside a component's **generated** template, not just in the input.
 
 ## `glob(map, options?)`
 
@@ -95,8 +100,12 @@ options?: {
     pre?: PageTransform | PageTransform[],
     post?: PageTransform | PageTransform[],
   },
+  properties?: PropertyProvider,
 }
 ```
+
+There is no `context` option on the adapters — each one sets it to its framework's native per-request
+object for you (see the [table under `properties`](#properties)).
 
 - **Astro** — returns an `onRequest` middleware. See [Astro](/frameworks/astro).
 - **Nuxt** — returns a Nitro `render:response` handler that transforms `response.body` in place. See
@@ -215,6 +224,11 @@ reach (a render error can be content-dependent; a resolve failure hits every pag
 default log says so), and your handler can tell them apart by the error itself. One broken component module
 never takes down the pages that contain its tag.
 
+And it covers **property-provider failures** (see [`properties`](#properties)): a throwing or rejecting
+provider call leaves that instance's element untouched — rendering with partial data would bake broken
+output — while other instances of the same tag (and everything else) still render. Reported once per tag,
+with its own default log.
+
 ### `serializeState`
 
 `boolean` (default `false`). When enabled, each rendered component is stamped with a deterministic `ejs:key`
@@ -225,6 +239,86 @@ are emitted as `Store/<key>` references and a shared store is serialized once. R
 [State transport](/concepts/#state-transport) for the format and caveats. The same option is accepted by the
 [Astro](/frameworks/astro), [Nuxt](/frameworks/nuxt) and [SvelteKit](/frameworks/sveltekit) `elementSSR`
 adapters.
+
+### `properties`
+
+```ts
+type PropertyProvider = (input: {
+  tag: string; // the element's lower-cased tag name
+  node: Element; // its parsed element (node-html-parser) — read attributes / light DOM, treat as read-only
+  context: unknown; // the `context` option — the adapters set their native request object
+}) => object | null | undefined | Promise<object | null | undefined>;
+
+properties?: PropertyProvider;
+context?: unknown;
+```
+
+The **input side** of SSR: seed server-fetched properties — CMS content, database rows, API responses —
+into components before they render, when the source markup only carries a reference (a content path, an
+id). Without it, every data need has to be squeezed through attribute serialization by whoever produces
+the HTML. The provider is called once per component instance: read the instance off `node`, fetch, and
+return an object of properties (or `null`/`undefined` for none).
+
+```js
+await renderToString(html, {
+  resolve: catalog,
+  properties: async ({ tag, node, context }) => {
+    if (tag !== "x-teaser") return null;
+    return fetchTeaserContent(
+      node.getAttribute("content-path"),
+      context.locale,
+    );
+  },
+});
+```
+
+**Merge order** (as in every integration that shipped): `element defaults < provider properties < HTML
+attributes` — attributes win because they are explicit in the source markup.
+
+- **Once per distinct instance.** Instances are identified by tag + parsed markup, so two identical
+  elements share one provider call (and its result) — a de-duplication, not a limitation: keep providers
+  deterministic over their input. Calls run **in parallel** per fixpoint pass, so per-instance fetches
+  never serialize, and components that only appear in another component's generated template get provided
+  too.
+- **Failures are isolated** like a throwing `template()`: the instance's element is left untouched and the
+  failure reports through [`onError`](#onerror) once per tag. A non-object return (or a bare
+  non-function `properties` value) fails loudly instead of silently providing nothing.
+- **Hydration needs state transport.** The client cannot re-derive provider-seeded properties from
+  attributes — enable [`serializeState`](#serializestate) for components that hydrate with them.
+
+`context` is an opaque per-render value handed to every provider call. The adapters set it to their
+framework's native per-request (or per-page) object — pass it yourself only when calling `renderToString`
+directly:
+
+| Adapter   | `context` value                                                             |
+| --------- | --------------------------------------------------------------------------- |
+| Astro     | the `APIContext` (request, params, locals, …)                               |
+| Nuxt      | Nitro's `H3Event`                                                           |
+| SvelteKit | the `RequestEvent`                                                          |
+| Node      | `{ request, response }` — the middleware's own `req`/`res`                  |
+| Eleventy  | `this.page` (url, inputPath, outputPath, …) — build time, no request exists |
+| Vite      | the `transformIndexHtml` context (path, filename, …) — build time           |
+
+File conventions from earlier renderer generations are one provider away — e.g. a
+`<tag>.properties.js` sidecar next to each component:
+
+```js
+// Node servers (Express, Eleventy, Nitro): resolve the sidecar by convention
+properties: async ({ tag, node, context }) => {
+  const module = await import(`./components/${tag}.properties.js`).catch(() => null);
+  return module ? module.default(node, context) : null;
+},
+```
+
+```js
+// Vite (config / SvelteKit / Astro): variable dynamic imports need import.meta.glob
+const providers = import.meta.glob("./components/*.properties.js");
+
+properties: async ({ tag, node, context }) => {
+  const load = providers[`./components/${tag}.properties.js`];
+  return load ? (await load()).default(node, context) : null;
+},
+```
 
 ### `transforms`
 

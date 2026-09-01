@@ -58,6 +58,10 @@ import { renderToString } from "../render-to-string.js";
  * `ejs/json` script + per-host `ejs:key`s) so it hydrates with that state instead of property
  * defaults; enable element-js' matching `serializeState` config on the client too.
  *
+ * A `properties` provider (see {@link import('../render-to-string.js').PropertyProvider}) receives
+ * Eleventy's `this.page` (url, inputPath, outputPath, date, …) as its `context` — there is no
+ * request at build time, so the page object is the per-render context.
+ *
  * @param {{
  *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
@@ -65,6 +69,7 @@ import { renderToString } from "../render-to-string.js";
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  *   transforms?: { pre?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[], post?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[] },
+ *   properties?: import("../render-to-string.js").PropertyProvider,
  * }} [options]
  * @return {(this: { page?: { outputPath?: string | false } }, content: string) => string | Promise<string>}
  *   an Eleventy transform — pass it to `eleventyConfig.addTransform(name, fn)`
@@ -76,6 +81,7 @@ export function elementSSR({
   onError,
   serializeState = false,
   transforms,
+  properties,
 } = {}) {
   const options = {
     resolve,
@@ -84,12 +90,15 @@ export function elementSSR({
     onError,
     serializeState,
     transforms,
+    properties,
   };
   // Regular function (not arrow): Eleventy invokes the transform with `this.page` bound, which an
   // arrow function could not read. Runs for every output file, so gate on the .html output path —
   // `outputPath` can be `false` for `permalink: false` pages, hence the `|| ""`.
   return function (content) {
     if (!(this.page?.outputPath || "").endsWith(".html")) return content;
-    return renderToString(content, options);
+    // The property provider's per-render `context` is Eleventy's page object (build time — no
+    // request exists).
+    return renderToString(content, { ...options, context: this.page });
   };
 }

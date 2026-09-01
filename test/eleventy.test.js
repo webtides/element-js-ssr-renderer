@@ -47,3 +47,17 @@ describe("elementSSR (eleventy transform)", () => {
     expect(out).toContain('<script type="ejs/json">');
   });
 });
+
+describe("property provider context (eleventy)", () => {
+  it("hands Eleventy's page object to the property provider as `context`", async () => {
+    const provider = vi.fn(() => null);
+    const transform = elementSSR({
+      resolve: { "el-button": Button },
+      properties: provider,
+    });
+    const page = { outputPath: "/_site/index.html", url: "/" };
+    await transform.call({ page }, "<el-button>x</el-button>");
+    expect(provider).toHaveBeenCalled();
+    expect(provider.mock.calls[0][0].context).toBe(page);
+  });
+});

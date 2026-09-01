@@ -48,6 +48,10 @@ import { transformHtmlResponse } from "./transform-response.js";
  * `ejs/json` script + per-host `ejs:key`s) so it hydrates with that state instead of property
  * defaults; enable element-js' matching `serializeState` config on the client too.
  *
+ * A `properties` provider (see {@link import('../render-to-string.js').PropertyProvider}) receives
+ * Astro's `APIContext` as its `context`, so it can read the request while fetching per-instance
+ * properties.
+ *
  * @param {{
  *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
@@ -55,6 +59,7 @@ import { transformHtmlResponse } from "./transform-response.js";
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  *   transforms?: { pre?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[], post?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[] },
+ *   properties?: import("../render-to-string.js").PropertyProvider,
  * }} [options]
  * @return {(context: any, next: () => Promise<Response>) => Promise<Response>}
  */
@@ -65,6 +70,7 @@ export function elementSSR({
   onError,
   serializeState = false,
   transforms,
+  properties,
 } = {}) {
   return async (context, next) => {
     const response = await next();
@@ -75,6 +81,10 @@ export function elementSSR({
       onError,
       serializeState,
       transforms,
+      properties,
+      // The property provider's per-request `context` is Astro's APIContext (request, params,
+      // locals, …) — the object this middleware itself receives.
+      context,
     });
   };
 }

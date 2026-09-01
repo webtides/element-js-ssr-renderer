@@ -44,6 +44,10 @@ import { renderToString } from "../render-to-string.js";
  * `ejs/json` script + per-host `ejs:key`s) so it hydrates with that state instead of property
  * defaults; enable element-js' matching `serializeState` config on the client too.
  *
+ * A `properties` provider (see {@link import('../render-to-string.js').PropertyProvider}) receives
+ * `{ request, response }` — the middleware's own `req`/`res` — as its `context`, so it can read the
+ * request while fetching per-instance properties.
+ *
  * @param {{
  *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
@@ -51,6 +55,7 @@ import { renderToString } from "../render-to-string.js";
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  *   transforms?: { pre?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[], post?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[] },
+ *   properties?: import("../render-to-string.js").PropertyProvider,
  * }} [options]
  * @return {(req: any, res: any, next: () => void) => void} a Connect-style middleware
  */
@@ -61,6 +66,7 @@ export function elementSSR({
   onError,
   serializeState = false,
   transforms,
+  properties,
 } = {}) {
   const options = {
     resolve,
@@ -69,6 +75,7 @@ export function elementSSR({
     onError,
     serializeState,
     transforms,
+    properties,
   };
 
   return (req, res, next) => {
@@ -127,7 +134,11 @@ export function elementSSR({
         return originalEnd.call(res, body, callback);
       }
 
-      renderToString(body, options).then(
+      // The property provider's per-request `context` carries the middleware's own req/res.
+      renderToString(body, {
+        ...options,
+        context: { request: req, response: res },
+      }).then(
         (html) => {
           if (res.getHeader?.("content-length") != null)
             res.setHeader("content-length", Buffer.byteLength(html));

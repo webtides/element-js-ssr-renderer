@@ -35,6 +35,10 @@ import { renderToString } from "../render-to-string.js";
  * `ejs/json` script + per-host `ejs:key`s) so it hydrates with that state instead of property
  * defaults; enable element-js' matching `serializeState` config on the client too.
  *
+ * A `properties` provider (see {@link import('../render-to-string.js').PropertyProvider}) receives
+ * SvelteKit's `RequestEvent` as its `context`, so it can read the request while fetching
+ * per-instance properties.
+ *
  * @param {{
  *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
@@ -42,6 +46,7 @@ import { renderToString } from "../render-to-string.js";
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  *   transforms?: { pre?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[], post?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[] },
+ *   properties?: import("../render-to-string.js").PropertyProvider,
  * }} [options]
  * @return {(input: { event: any, resolve: (event: any, opts: { transformPageChunk: (chunk: { html: string, done: boolean }) => Promise<string> }) => any }) => any}
  */
@@ -52,6 +57,7 @@ export function elementSSR({
   onError,
   serializeState = false,
   transforms,
+  properties,
 } = {}) {
   const options = {
     resolve,
@@ -60,6 +66,7 @@ export function elementSSR({
     onError,
     serializeState,
     transforms,
+    properties,
   };
   return ({ event, resolve: resolveEvent }) => {
     let buffer = "";
@@ -67,7 +74,8 @@ export function elementSSR({
       transformPageChunk: async ({ html, done }) => {
         buffer += html;
         if (!done) return "";
-        return renderToString(buffer, options);
+        // The property provider's per-request `context` is SvelteKit's RequestEvent.
+        return renderToString(buffer, { ...options, context: event });
       },
     });
   };

@@ -114,3 +114,20 @@ describe("elementSSR (node middleware)", () => {
     expect(res.body()).toBe(input);
   });
 });
+
+describe("property provider context (node)", () => {
+  it("hands { request, response } to the property provider as `context`", async () => {
+    const provider = vi.fn(() => null);
+    const res = mockRes({ "content-type": "text/html" });
+    const req = { url: "/" };
+    elementSSR({ resolve: { "el-button": Button }, properties: provider })(
+      req,
+      res,
+      () => res.end("<el-button>x</el-button>"),
+    );
+    await res.done;
+    expect(provider).toHaveBeenCalled();
+    expect(provider.mock.calls[0][0].context.request).toBe(req);
+    expect(provider.mock.calls[0][0].context.response).toBe(res);
+  });
+});

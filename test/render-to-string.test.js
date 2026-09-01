@@ -1103,3 +1103,250 @@ describe("page-level transforms", () => {
     ).rejects.toThrow(/unknown.*posts/);
   });
 });
+
+// Components for the property-provider tests (T-009). Interpolations render inside element-js
+// hydration markers (`<!--dom-part-0-->value<!--/dom-part-0-->`), so assertions match `-->value<!--`.
+class MergeOrder extends TemplateElement {
+  properties() {
+    return {
+      first: "default-first",
+      second: "default-second",
+      third: "default-third",
+    };
+  }
+  template() {
+    return html`<i>${this.first}</i><i>${this.second}</i><i>${this.third}</i>`;
+  }
+}
+class ContentTeaser extends TemplateElement {
+  properties() {
+    return { headline: "unfetched" };
+  }
+  template() {
+    return html`<h2>${this.headline}</h2>`;
+  }
+}
+class ProvidedOuter extends TemplateElement {
+  template() {
+    return html`<x-content content-path="/nested"></x-content>`;
+  }
+}
+class BooleanFlag extends TemplateElement {
+  properties() {
+    return {};
+  }
+  template() {
+    return html`<span>${this.open ? "flag-yes" : "flag-no"}</span>`;
+  }
+}
+class RandomNest extends TemplateElement {
+  template() {
+    return html`<x-random-leaf>${Math.random()}</x-random-leaf>`;
+  }
+}
+class RandomLeaf extends TemplateElement {
+  template() {
+    return html`<b>leaf</b>`;
+  }
+}
+
+describe("async property provider (properties)", () => {
+  const providerCatalog = {
+    "x-merge": MergeOrder,
+    "x-content": ContentTeaser,
+    "x-outer": ProvidedOuter,
+    "x-flag": BooleanFlag,
+  };
+
+  it("merges element defaults < provider properties < HTML attributes", async () => {
+    const out = await renderToString(
+      '<x-merge third="attribute-third"></x-merge>',
+      {
+        resolve: providerCatalog,
+        properties: () => ({
+          second: "provider-second",
+          third: "provider-third",
+        }),
+      },
+    );
+    expect(out).toContain("-->default-first<!--");
+    expect(out).toContain("-->provider-second<!--");
+    expect(out).toContain("-->attribute-third<!--");
+    expect(out).not.toContain("provider-third");
+  });
+
+  it("provides per-instance properties derived from the parsed node, async", async () => {
+    const out = await renderToString(
+      '<x-content content-path="/a"></x-content><x-content content-path="/b"></x-content>',
+      {
+        resolve: providerCatalog,
+        properties: async ({ node }) => {
+          await new Promise((resolve) => setTimeout(resolve, 2));
+          return {
+            headline: `content-of:${node.getAttribute("content-path")}`,
+          };
+        },
+      },
+    );
+    expect(out).toContain("-->content-of:/a<!--");
+    expect(out).toContain("-->content-of:/b<!--");
+  });
+
+  it("hands the provider the tag and the `context` option", async () => {
+    const out = await renderToString("<x-content></x-content>", {
+      resolve: providerCatalog,
+      context: { locale: "de" },
+      properties: ({ tag, context }) => ({
+        headline: `${tag}:${context.locale}`,
+      }),
+    });
+    expect(out).toContain("-->x-content:de<!--");
+  });
+
+  it("calls the provider once per distinct instance — identical instances share one call", async () => {
+    const provider = vi.fn(({ node }) => ({
+      headline: node.getAttribute("content-path"),
+    }));
+    const out = await renderToString(
+      '<x-content content-path="/same"></x-content>' +
+        '<x-content content-path="/same"></x-content>' +
+        '<x-content content-path="/other"></x-content>',
+      { resolve: providerCatalog, properties: provider },
+    );
+    expect(provider).toHaveBeenCalledTimes(2);
+    expect(out.match(/-->\/same<!--/g)).toHaveLength(2);
+    expect(out).toContain("-->/other<!--");
+  });
+
+  it("provides properties to components that only appear in a generated template", async () => {
+    const out = await renderToString("<x-outer></x-outer>", {
+      resolve: providerCatalog,
+      properties: ({ tag, node }) =>
+        tag === "x-content"
+          ? { headline: `nested:${node.getAttribute("content-path")}` }
+          : null,
+    });
+    expect(out).toContain("-->nested:/nested<!--");
+  });
+
+  it("isolates a throwing/rejecting provider: instance untouched, siblings render, onError once", async () => {
+    const onError = vi.fn();
+    const out = await renderToString(
+      '<x-content content-path="/ok"></x-content><x-content content-path="/broken"></x-content>',
+      {
+        resolve: providerCatalog,
+        onError,
+        properties: async ({ node }) => {
+          if (node.getAttribute("content-path") === "/broken")
+            throw new Error("boom-provider");
+          return { headline: "fetched-ok" };
+        },
+      },
+    );
+    expect(out).toContain("-->fetched-ok<!--");
+    // The failed instance keeps its authored markup — no template rendered into it.
+    expect(out).toContain('content-path="/broken"></x-content>');
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0]).toBe("x-content");
+    expect(onError.mock.calls[0][1].message).toBe("boom-provider");
+  });
+
+  it("reports provider failures via console.error by default", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await renderToString("<x-content></x-content>", {
+        resolve: providerCatalog,
+        properties: () => {
+          throw new Error("boom-provider");
+        },
+      });
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy.mock.calls[0][0]).toContain("property provider threw");
+      expect(errorSpy.mock.calls[0][0]).toContain("<x-content>");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("fails the whole render when onError rethrows a provider failure (fail-fast)", async () => {
+    await expect(
+      renderToString("<x-content></x-content>", {
+        resolve: providerCatalog,
+        onError: (_tag, error) => {
+          throw error;
+        },
+        properties: () => {
+          throw new Error("boom-provider");
+        },
+      }),
+    ).rejects.toThrow("boom-provider");
+  });
+
+  it("rejects a non-object provider return loudly (via onError), page survives", async () => {
+    const onError = vi.fn();
+    const out = await renderToString(
+      "<x-content></x-content><x-merge></x-merge>",
+      {
+        resolve: providerCatalog,
+        onError,
+        properties: ({ tag }) => (tag === "x-content" ? "nope" : []),
+      },
+    );
+    // Both instances stay untouched, the page itself survives.
+    expect(out).toContain("<x-content></x-content>");
+    expect(onError).toHaveBeenCalledTimes(2);
+    const messages = onError.mock.calls.map(([, error]) => error.message);
+    expect(messages.join("\n")).toMatch(/returned string for <x-content>/);
+    expect(messages.join("\n")).toMatch(/returned an array for <x-merge>/);
+  });
+
+  it("treats a null/undefined provider return as no properties", async () => {
+    const onError = vi.fn();
+    const out = await renderToString("<x-content></x-content>", {
+      resolve: providerCatalog,
+      onError,
+      properties: () => undefined,
+    });
+    expect(out).toContain("-->unfetched<!--");
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("coerces a bare boolean attribute for a property only the provider introduced", async () => {
+    const out = await renderToString("<x-flag open></x-flag>", {
+      resolve: providerCatalog,
+      properties: () => ({ open: false }),
+    });
+    // `open` has no element default; the merged provider value marks it boolean, so the bare
+    // attribute coerces to `true` instead of the raw empty string.
+    expect(out).toContain("flag-yes");
+  });
+
+  it("transports provider-seeded properties to the client with serializeState", async () => {
+    const out = await renderToString("<x-content></x-content>", {
+      resolve: providerCatalog,
+      serializeState: true,
+      properties: () => ({ headline: "from-provider" }),
+    });
+    expect(out).toContain('<script type="ejs/json">');
+    expect(out).toContain('"headline":"from-provider"');
+  });
+
+  it("throws up front when `properties` is not a function", async () => {
+    await expect(
+      renderToString("<p></p>", { properties: "nope" }),
+    ).rejects.toThrow(/`properties` must be a provider function/);
+  });
+
+  it("fails with a clear error instead of hanging on a non-deterministic template", async () => {
+    await expect(
+      renderToString("<x-random-nest></x-random-nest>", {
+        resolve: {
+          "x-random-nest": RandomNest,
+          "x-random-leaf": RandomLeaf,
+        },
+        onUnresolved: () => {},
+        properties: () => ({}),
+      }),
+    ).rejects.toThrow(/did not converge/);
+  });
+});

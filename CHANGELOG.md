@@ -4,6 +4,20 @@ All notable changes to `@webtides/element-js-ssr-renderer` are documented here. 
 [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/) (0.x: minor
 bumps may contain behavior changes).
 
+## [Unreleased]
+
+### Added
+
+- **Async property provider** (T-009, #7) — `properties: ({ tag, node, context }) => object | Promise<object>`
+  on `renderToString` and all adapters: seed server-fetched properties (CMS content, database rows, API
+  responses) into components before they render, merged over element defaults and under HTML attributes.
+  Called once per distinct instance (identical instances share the call), in parallel per resolution
+  pass; components that only appear in generated templates are provided too. Failures are isolated per
+  instance and report through `onError`. The new `context` option rides along to every provider call —
+  the adapters set it to their framework's native request object (Astro `APIContext`, SvelteKit
+  `RequestEvent`, Nitro `H3Event`, Node `{ request, response }`, Eleventy `this.page`, Vite's
+  `transformIndexHtml` context).
+
 ## [0.3.0] — 2026-09-01
 
 The second wave of production-integration issues (#9–#12), in one release.

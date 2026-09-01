@@ -100,3 +100,20 @@ describe("elementSSR (vite plugin)", () => {
     });
   });
 });
+
+describe("property provider context (vite)", () => {
+  it("hands Vite's transformIndexHtml context to the property provider as `context`", async () => {
+    const provider = vi.fn(() => null);
+    const plugin = elementSSR({
+      resolve: { "el-button": Button },
+      properties: provider,
+    });
+    const viteContext = { path: "/index.html", filename: "/x/index.html" };
+    await plugin.transformIndexHtml.handler(
+      "<el-button>x</el-button>",
+      viteContext,
+    );
+    expect(provider).toHaveBeenCalled();
+    expect(provider.mock.calls[0][0].context).toBe(viteContext);
+  });
+});

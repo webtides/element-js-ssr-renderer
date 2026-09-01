@@ -55,3 +55,17 @@ describe("elementSSR (astro middleware)", () => {
     expect(await res.text()).toBe(json);
   });
 });
+
+describe("property provider context (astro)", () => {
+  it("hands Astro's APIContext to the property provider as `context`", async () => {
+    const provider = vi.fn(() => null);
+    const onRequest = elementSSR({
+      resolve: { "el-button": Button },
+      properties: provider,
+    });
+    const apiContext = { locals: { requestId: "r-1" } };
+    await onRequest(apiContext, htmlNext("<el-button>x</el-button>"));
+    expect(provider).toHaveBeenCalled();
+    expect(provider.mock.calls[0][0].context).toBe(apiContext);
+  });
+});

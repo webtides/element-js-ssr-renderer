@@ -66,7 +66,8 @@ function backWithNode(instance, node) {
 /**
  * Build an element-js instance from its class + parsed attributes and render its template to a
  * string. We bypass the element lifecycle entirely: construct, assign default properties merged
- * with the attribute values, then call `template()` and stringify the resulting `TemplateResult`.
+ * with provider-supplied properties and the attribute values, then call `template()` and stringify
+ * the resulting `TemplateResult`.
  * @param {CustomElementConstructor} Constructor
  * @param {Object<string, string>} attributes
  * @param {boolean} [serialize] - when true, also capture the instance's `serializeState()` so the
@@ -76,9 +77,18 @@ function backWithNode(instance, node) {
  *   rendered for; backs the instance's light-DOM introspection (see {@link backWithNode}).
  * @param {ResolvedEntry} [entry] - the resolved catalog entry; its `injected` styles and
  *   `adoptGlobalStyles` override come from a {@link ComponentConfig} (T-021).
+ * @param {object} [providedProperties] - properties supplied by the `properties` provider for this
+ *   instance (T-009); merged over the element's defaults and under its HTML attributes.
  * @return {{ markup: string, shadow: boolean, styleEntries: {index: number, css: string}[], injectedEntries: {index: number, css: string}[], adoptGlobalStyles: boolean | string | string[], serializedState: object | undefined }}
  */
-function renderComponent(Constructor, attributes, serialize, node, entry) {
+function renderComponent(
+  Constructor,
+  attributes,
+  serialize,
+  node,
+  entry,
+  providedProperties,
+) {
   const instance = new Constructor();
 
   // Wire the node in before `properties()` runs: in the browser, properties are collected at
@@ -87,10 +97,14 @@ function renderComponent(Constructor, attributes, serialize, node, entry) {
 
   const defaults =
     typeof instance.properties === "function" ? instance.properties() : {};
-  const properties = { ...defaults };
+  // Merge order (T-009): element defaults < provider properties < HTML attributes — attributes win
+  // because they are explicit in the source markup.
+  const properties = { ...defaults, ...providedProperties };
   for (const [name, raw] of Object.entries(attributes)) {
     const propertyName = dashToCamel(name);
-    properties[propertyName] = coerceAttribute(raw, defaults[propertyName]);
+    // The boolean-detection fallback reads the merged value, so a boolean property that only the
+    // provider introduced still gets bare-attribute coercion (`<x-el open>` → `true`).
+    properties[propertyName] = coerceAttribute(raw, properties[propertyName]);
   }
   Object.assign(instance, properties);
 
@@ -286,7 +300,21 @@ function isEmptyTemplate(markup) {
  * @property {Set<string>} storeKeys - store keys already collected into `stateMap`, for de-duplication.
  * @property {{ n: number }} keyCounter - monotonic counter backing the deterministic `ejs:key`s; it
  *   advances in document order, so identical input yields identical keys across renders (T-007.1).
+ * @property {Map<string, object | symbol> | undefined} providedProperties - property-provider results
+ *   (T-009), keyed by instance (tag + parsed markup), persisted across passes by `renderToString`.
+ *   `undefined` when no provider is configured — the provider path is skipped entirely. A value of
+ *   {@link PROVIDER_FAILED} marks an instance whose provider threw: left untouched, never retried.
+ * @property {(instanceKey: string, tag: string, node: import('node-html-parser').HTMLElement) => void} [onPendingProperties] -
+ *   called for each instance whose provider result is not in `providedProperties` yet; the fixpoint
+ *   fetches those (in parallel) between passes.
  */
+
+/**
+ * Marks an instance whose property provider threw or rejected (T-009) in
+ * `TransformContext.providedProperties`: the element stays untouched (rendering it with partial
+ * data would bake broken output), and the fixpoint never re-calls the provider for it.
+ */
+const PROVIDER_FAILED = Symbol("element-js-ssr-renderer:provider-failed");
 
 /**
  * Recursively walk a node-html-parser tree, pre-rendering every registered custom element in place.
@@ -302,6 +330,28 @@ function transformNode(node, context) {
     const Constructor = entry?.Constructor;
 
     if (Constructor) {
+      // Property provider (T-009): with a provider configured, every instance needs its provider
+      // result before it can render. The instance is identified by its parsed markup — each pass
+      // re-parses the same input, so results fetched between passes are found again, and identical
+      // instances share one provider call. An instance whose result isn't in yet is skipped like an
+      // unresolved tag (children still walked, so nested instances are discovered in the same
+      // pass) and reported via `onPendingProperties`; one whose provider failed stays untouched
+      // for good.
+      let providedProperties;
+      if (context.providedProperties) {
+        const instanceKey = `${tag} ${child.toString()}`;
+        providedProperties = context.providedProperties.get(instanceKey);
+        if (providedProperties === undefined) {
+          context.onPendingProperties?.(instanceKey, tag, child);
+          transformNode(child, context);
+          continue;
+        }
+        if (providedProperties === PROVIDER_FAILED) {
+          transformNode(child, context);
+          continue;
+        }
+      }
+
       // Per-component error isolation (T-020): a throwing constructor / `properties()` /
       // `template()` / `serializeState()` must not take down the whole-page transform. The failing
       // element is left untouched — like an unresolved tag, its authored markup survives and can
@@ -314,6 +364,7 @@ function transformNode(node, context) {
           context.serializeState,
           child,
           entry,
+          providedProperties,
         );
       } catch (error) {
         context.onError?.(tag, error);
@@ -503,6 +554,36 @@ function defaultResolveErrorReport(tag, error) {
 }
 
 /**
+ * The default report for a throwing (or rejecting) property provider (T-009). Like the other
+ * per-tag failure reports it is NOT dev-only — the affected elements are silently left unrendered,
+ * so a log line is production's only trace. Pass your own `onError` to route it elsewhere, or
+ * rethrow inside it to fail the whole render instead (fail-fast).
+ * @param {string} tag
+ * @param {Error} error
+ */
+function defaultProviderErrorReport(tag, error) {
+  console.error(
+    `[element-js-ssr-renderer] the property provider threw for <${tag}> during SSR — its ` +
+      `element(s) are left unrendered (they will still hydrate client-side if defined there).`,
+    error,
+  );
+}
+
+/**
+ * A **property provider** (T-009): called once per distinct component instance before its render,
+ * to seed server-fetched properties — CMS content, database rows, API responses — that the source
+ * markup only references (e.g. by a content-path attribute). Sync or async; returns an object of
+ * properties merged **over** the element's `properties()` defaults and **under** its HTML
+ * attributes (attributes win — they are explicit in the source), or `null`/`undefined` for none.
+ *
+ * `tag` is the element's lower-cased tag name; `node` is its parsed element (read its attributes
+ * and light DOM to decide what to fetch — treat it as read-only); `context` is the value of
+ * `renderToString`'s `context` option — the framework adapters set it to their native
+ * per-request/per-page object.
+ * @typedef {(input: { tag: string, node: import('node-html-parser').HTMLElement, context: * }) => object | null | undefined | Promise<object | null | undefined>} PropertyProvider
+ */
+
+/**
  * A **page-level transform** (T-028): `(html, context) => html`, sync or async. `pre` transforms run
  * once on the input before any component rendering; `post` transforms run once on the final
  * output after the resolution fixpoint converged. Each receives the previous transform's result
@@ -581,6 +662,16 @@ async function applyTransforms(list, phase, html, context) {
   return html;
 }
 
+/**
+ * Hard cap on resolution/render fixpoint passes. Unreachable in normal operation — the pass count
+ * is bounded by component nesting depth (each pass either resolves new tags, fetches provider
+ * results for newly discovered instances, or converges) — it exists to turn a non-terminating
+ * render into a clear error instead of a hang. The one known way to hit it: a non-deterministic
+ * template (`Math.random()`, `Date.now()` in markup) combined with a property provider, which
+ * mints new instance keys every pass.
+ */
+const MAXIMUM_PASSES = 50;
+
 /** The dom-shim stamps its own `document` with this marker; a real DOM's document never has it. */
 const SHIM_DOCUMENT = Symbol.for("element-js-ssr-renderer:dom-shim");
 
@@ -611,16 +702,32 @@ function adoptDocumentLang(root) {
 
 /**
  * Parse `html`, pre-render every custom element found in `resolved`, and stringify. Pure over
- * (`html`, `resolved`), so the resolution fixpoint can call it repeatedly with a growing map of
- * resolved tags (see {@link renderToString}).
+ * (`html`, `resolved`, `providedProperties`), so the resolution fixpoint can call it repeatedly
+ * with a growing map of resolved tags and provider results (see {@link renderToString}).
  * @param {string} html
- * @param {Object<string, ResolvedEntry>} resolved - tags already resolved to their entries
- * @param {(tag: string) => void} [onUnresolved]
- * @param {boolean} [serializeState] - opt into client state transport (T-007)
- * @param {(tag: string, error: Error) => void} [onError] - render-error recorder (T-020)
+ * @param {{
+ *   resolved: Object<string, ResolvedEntry>,
+ *   onUnresolved?: (tag: string) => void,
+ *   serializeState?: boolean,
+ *   onError?: (tag: string, error: Error) => void,
+ *   providedProperties?: Map<string, object | symbol>,
+ *   onPendingProperties?: (instanceKey: string, tag: string, node: import('node-html-parser').HTMLElement) => void,
+ * }} options - `resolved` maps tags to their entries; `onUnresolved` reports misses;
+ *   `onError` records render errors (T-020); `providedProperties`/`onPendingProperties` carry the
+ *   property-provider state across passes (T-009).
  * @return {string}
  */
-function runTransform(html, resolved, onUnresolved, serializeState, onError) {
+function runTransform(
+  html,
+  {
+    resolved,
+    onUnresolved,
+    serializeState,
+    onError,
+    providedProperties,
+    onPendingProperties,
+  },
+) {
   const root = parse(html, PARSE_OPTIONS);
   adoptDocumentLang(root);
   // Collect global styles up front, before any generated shadow templates are spliced in, so we
@@ -637,6 +744,8 @@ function runTransform(html, resolved, onUnresolved, serializeState, onError) {
     stateMap,
     storeKeys: new Set(),
     keyCounter: { n: 0 },
+    providedProperties,
+    onPendingProperties,
   });
   if (serializeState && Object.keys(stateMap).length > 0) {
     appendStateScript(root, stateMap);
@@ -904,6 +1013,20 @@ function composeSources(sources) {
  * before resolution, its module is never resolved or imported on the server (even when the tag is
  * present in `resolve`). Module-scope side effects of client-only components never run.
  *
+ * `properties` seeds **server-fetched properties** into components before they render (T-009): a
+ * {@link PropertyProvider} called once per distinct component instance — read the instance's
+ * attributes/light DOM off `node`, fetch from your CMS/database/API, and return an object merged
+ * over the element's defaults and under its HTML attributes. Instances are identified by their
+ * parsed markup, so two identical instances share one provider call (and its result). Provider
+ * calls run in parallel per fixpoint pass, interleaved with tag resolution. A throwing or
+ * rejecting provider is isolated like a throwing `template()`: the instance's element is left
+ * untouched and the failure reports through `onError` once per tag. `context` is an opaque value
+ * handed to every provider call — the framework adapters set it to their native per-request
+ * object (Astro's `APIContext`, SvelteKit's `RequestEvent`, Nitro's `H3Event`, …), so providers
+ * can read the request; set it yourself when calling `renderToString` directly. Note that
+ * provider-seeded properties on components that hydrate need `serializeState: true` — the client
+ * cannot re-derive them from attributes.
+ *
  * The input's `<html lang>` is adopted onto the dom-shim's `document.documentElement.lang` for the
  * duration of the render (T-026), so components that read it — `Intl` formatting, i18n lookups —
  * render the page's language instead of the shim's `'en'` default; the previous value is restored
@@ -926,6 +1049,8 @@ function composeSources(sources) {
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  *   transforms?: { pre?: PageTransform | PageTransform[], post?: PageTransform | PageTransform[] },
+ *   properties?: PropertyProvider,
+ *   context?: *,
  * }} [options]
  *   `resolve` is a {@link Catalog} (a `{ tag: Class }` / `import.meta.glob()` map, eager classes,
  *   lazy loaders and {@link ComponentConfig} objects auto-detected) or a `(tag) => …` resolver
@@ -938,7 +1063,9 @@ function composeSources(sources) {
  *   failed (rejected import, throwing resolver, invalid config); it defaults to a
  *   `console.error` (not dev-only), and rethrowing from it fails the whole render.
  *   `serializeState` (default `false`) opts into client state transport. `transforms` is the
- *   page-level pre/post pipeline described above.
+ *   page-level pre/post pipeline described above. `properties` is the per-instance
+ *   {@link PropertyProvider} described above; `context` is the opaque per-render value handed to
+ *   each of its calls.
  * @return {Promise<string>} the HTML with custom elements pre-rendered
  */
 export async function renderToString(
@@ -950,11 +1077,18 @@ export async function renderToString(
     onError,
     serializeState = false,
     transforms,
+    properties,
+    context,
   } = {},
 ) {
   setSerializeStateConfig(serializeState);
-  // Validated up front: a transforms config mistake must fail immediately, not mid-render.
+  // Validated up front: a transforms/properties config mistake must fail immediately, not mid-render.
   const { pre, post } = normalizeTransforms(transforms);
+  if (properties != null && typeof properties !== "function")
+    throw new TypeError(
+      "[element-js-ssr-renderer] `properties` must be a provider function " +
+        "(({ tag, node, context }) => object | Promise<object>)",
+    );
   const transformContext = {}; // the shared PageTransformContext, one per render
   const sources =
     resolve == null ? [] : Array.isArray(resolve) ? resolve : [resolve];
@@ -965,6 +1099,7 @@ export async function renderToString(
   // Resolve failures share the render-error channel (one hook to wire, existing `onError` logging
   // covers them for free); only the *default* report differs, flagging the every-page nature.
   const reportResolveError = onError ?? defaultResolveErrorReport;
+  const reportProviderError = onError ?? defaultProviderErrorReport;
 
   const resolved = {}; // tag -> class; the map handed to each transform pass, growing each time
   const attempted = new Set(); // tags we've already tried, so genuine misses don't loop forever
@@ -972,6 +1107,12 @@ export async function renderToString(
   // per-component as a throwing template() — isolated, the tag left untouched like an unresolved
   // one. Each tag resolves at most once (see `attempted`), so this maps tag -> its one error.
   const resolveErrors = new Map();
+  // Property-provider state (T-009), both persisted across passes: results keyed by instance
+  // (tag + parsed markup — stable across passes, since every pass re-parses the same input and
+  // renders deterministically from cached results), and the first provider error per tag. The
+  // provider is called at most once per distinct instance; identical instances share the call.
+  const providedProperties = properties ? new Map() : undefined;
+  const providerErrors = properties ? new Map() : undefined;
 
   // The transform passes adopt the input's `<html lang>` onto the shim document (T-026); restore
   // the pre-render value afterwards so it never leaks into a later render of a different page (an
@@ -984,30 +1125,47 @@ export async function renderToString(
     // re-render from their result, so injected/stripped markup is what components see.
     html = await applyTransforms(pre, "pre", html, transformContext);
 
+    let passes = 0;
     // eslint-disable-next-line no-constant-condition
     while (true) {
+      if (++passes > MAXIMUM_PASSES)
+        throw new Error(
+          `[element-js-ssr-renderer] render did not converge after ${MAXIMUM_PASSES} passes — ` +
+            `this usually means a component template is non-deterministic (Math.random(), ` +
+            `Date.now() in markup) while a property provider is configured, so every pass mints ` +
+            `new component instances.`,
+        );
       const misses = new Set();
       const excludedTags = new Set();
       // Render errors are re-collected each pass (passes re-render from the original html); only the
       // converged pass's set is reported, so each failing tag surfaces exactly once (T-020).
       const errors = new Map(); // tag -> first error thrown rendering that tag this pass
-      const out = runTransform(
-        html,
+      // Instances discovered this pass whose provider result is still missing (T-009):
+      // instanceKey -> { tag, node }. Fetched in parallel below, then the pass repeats.
+      const pendingProperties = new Map();
+      const out = runTransform(html, {
         resolved,
         // Excluded tags (T-023) never enter the miss set: they are unresolved-by-choice, so they are
         // neither resolved/imported below nor warned about at convergence.
-        (tag) => {
+        onUnresolved: (tag) => {
           if (excluded(tag)) excludedTags.add(tag);
           else misses.add(tag);
         },
         serializeState,
-        (tag, error) => {
+        onError: (tag, error) => {
           if (!errors.has(tag)) errors.set(tag, error);
         },
-      );
+        providedProperties,
+        onPendingProperties: properties
+          ? (instanceKey, tag, node) => {
+              if (!pendingProperties.has(instanceKey))
+                pendingProperties.set(instanceKey, { tag, node });
+            }
+          : undefined,
+      });
 
       const fresh = [...misses].filter((tag) => !attempted.has(tag));
-      if (fresh.length === 0) {
+      if (fresh.length === 0 && pendingProperties.size === 0) {
         // Converged. Anything still missing is genuinely unresolvable — surface it (warn by default).
         // A resolve-failed tag is NOT among them: the consumer knows the tag, its module is just
         // broken — it gets the (louder) resolve-error report below instead of the unresolved warning.
@@ -1016,6 +1174,8 @@ export async function renderToString(
             if (!resolved[tag] && !resolveErrors.has(tag)) warn(tag);
         for (const [tag, error] of resolveErrors)
           reportResolveError(tag, error);
+        for (const [tag, error] of providerErrors ?? [])
+          reportProviderError(tag, error);
         for (const [tag, error] of errors) reportError(tag, error);
 
         // What the render did, for the `post` transforms (renderer-owned context key, T-028) — e.g.
@@ -1024,14 +1184,20 @@ export async function renderToString(
           resolved: Object.keys(resolved),
           unresolved: [...misses].filter((tag) => !resolveErrors.has(tag)),
           excluded: [...excludedTags],
-          failed: [...resolveErrors.keys(), ...errors.keys()],
+          failed: [
+            ...new Set([
+              ...resolveErrors.keys(),
+              ...(providerErrors?.keys() ?? []),
+              ...errors.keys(),
+            ]),
+          ],
         };
         return await applyTransforms(post, "post", out, transformContext);
       }
 
       for (const tag of fresh) attempted.add(tag);
-      await Promise.all(
-        fresh.map(async (tag) => {
+      await Promise.all([
+        ...fresh.map(async (tag) => {
           // Isolate resolution failures (T-025): without the catch, one rejected import would fail
           // the whole page render. The tag stays out of `resolved` (and in `attempted`), so the
           // fixpoint neither retries nor loops on it.
@@ -1042,7 +1208,29 @@ export async function renderToString(
             resolveErrors.set(tag, error);
           }
         }),
-      );
+        // Provider calls for the instances this pass discovered (T-009) — in parallel with the
+        // resolution above and with one another, so per-instance CMS/API fetches never serialize.
+        // A failure is isolated like a throwing template(): the instance is marked failed (never
+        // retried, its element left untouched) and the first error per tag is kept for reporting.
+        ...[...pendingProperties].map(async ([instanceKey, { tag, node }]) => {
+          try {
+            const value = await properties({ tag, node, context });
+            if (
+              value != null &&
+              (typeof value !== "object" || Array.isArray(value))
+            )
+              throw new TypeError(
+                `[element-js-ssr-renderer] the property provider returned ` +
+                  `${Array.isArray(value) ? "an array" : typeof value} for <${tag}> — it must ` +
+                  `return an object of properties (or null/undefined for none)`,
+              );
+            providedProperties.set(instanceKey, value ?? {});
+          } catch (error) {
+            providedProperties.set(instanceKey, PROVIDER_FAILED);
+            if (!providerErrors.has(tag)) providerErrors.set(tag, error);
+          }
+        }),
+      ]);
     }
   } finally {
     // Runs whether the render returned or threw (a rethrowing onError): the shim must not keep

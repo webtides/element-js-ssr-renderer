@@ -13,8 +13,15 @@
   `serializeState()` throws during SSR does not fail the page: the element is left untouched (its authored
   markup survives and hydrates client-side), and the error surfaces via the `onError` hook — by default a
   `console.error`, also in production. The same holds when a tag's **resolution** fails — a lazy loader whose
-  dynamic import rejects, a throwing resolver function, a broken catalog entry. Rethrow from your own
-  `onError` to fail fast instead. See [API → onError](/api/#onerror).
+  dynamic import rejects, a throwing resolver function, a broken catalog entry — and when a
+  [property provider](/api/#properties) call throws or rejects (that instance stays untouched; rendering
+  with partial data would bake broken output). Rethrow from your own `onError` to fail fast instead. See
+  [API → onError](/api/#onerror).
+- **Templates must be deterministic when a property provider is configured.** The provider fixpoint
+  identifies component instances by their markup across render passes; a template that mints different
+  markup every call (`Math.random()`, `Date.now()` in generated custom-element children) never converges,
+  and the render fails with a clear error instead of hanging. Randomness belongs client-side (or in a
+  provider, which runs once per instance).
 - **The dom-shim is inert.** Browser APIs the shim provides (`matchMedia`, observers, storage, `location`,
   `requestAnimationFrame`, …) exist so real-world component modules import and construct cleanly — but they
   return neutral values: media queries never match, storage reads yield `null`, observers observe nothing

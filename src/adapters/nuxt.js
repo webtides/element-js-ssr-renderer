@@ -36,6 +36,10 @@ import { transformHtmlResponse } from "./transform-response.js";
  * `ejs/json` script + per-host `ejs:key`s) so it hydrates with that state instead of property
  * defaults; enable element-js' matching `serializeState` config on the client too.
  *
+ * A `properties` provider (see {@link import('../render-to-string.js').PropertyProvider}) receives
+ * Nitro's `H3Event` as its `context` (the hook's second argument carries it), so it can read the
+ * request while fetching per-instance properties.
+ *
  * @param {{
  *   resolve?: import('../render-to-string.js').Catalog | ((tag: string) => *) | Array<import('../render-to-string.js').Catalog | ((tag: string) => *)>,
  *   onUnresolved?: (tag: string) => void,
@@ -43,8 +47,9 @@ import { transformHtmlResponse } from "./transform-response.js";
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
  *   transforms?: { pre?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[], post?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[] },
+ *   properties?: import("../render-to-string.js").PropertyProvider,
  * }} [options]
- * @return {(response: { body: unknown, headers?: Record<string, string>, statusCode?: number }) => Promise<void>}
+ * @return {(response: { body: unknown, headers?: Record<string, string>, statusCode?: number }, hookContext?: { event?: any }) => Promise<void>}
  *   a `render:response` hook handler
  */
 export function elementSSR({
@@ -54,6 +59,7 @@ export function elementSSR({
   onError,
   serializeState = false,
   transforms,
+  properties,
 } = {}) {
   const options = {
     resolve,
@@ -62,8 +68,9 @@ export function elementSSR({
     onError,
     serializeState,
     transforms,
+    properties,
   };
-  return async (response) => {
+  return async (response, hookContext) => {
     // Only HTML page bodies (a string) are renderable; skip streams, buffers, etc.
     if (typeof response?.body !== "string") return;
 
@@ -71,7 +78,12 @@ export function elementSSR({
       status: response.statusCode ?? 200,
       headers: response.headers ?? {},
     });
-    const transformed = await transformHtmlResponse(webResponse, options);
+    // The property provider's per-request `context` is Nitro's H3Event, handed to the
+    // `render:response` hook as its second argument.
+    const transformed = await transformHtmlResponse(webResponse, {
+      ...options,
+      context: hookContext?.event,
+    });
 
     // transformHtmlResponse returns the *same* object on a non-HTML content type — nothing to do.
     if (transformed === webResponse) return;

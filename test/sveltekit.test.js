@@ -55,3 +55,20 @@ describe("elementSSR (sveltekit handle)", () => {
     expect(out).toContain("Save");
   });
 });
+
+describe("property provider context (sveltekit)", () => {
+  it("hands SvelteKit's RequestEvent to the property provider as `context`", async () => {
+    const provider = vi.fn(() => null);
+    const handle = elementSSR({
+      resolve: { "el-button": Button },
+      properties: provider,
+    });
+    const event = { route: { id: "/" } };
+    await handle({
+      event,
+      resolve: resolveWithChunks("<el-button>x</el-button>"),
+    });
+    expect(provider).toHaveBeenCalled();
+    expect(provider.mock.calls[0][0].context).toBe(event);
+  });
+});

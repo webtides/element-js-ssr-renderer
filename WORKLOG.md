@@ -21,6 +21,16 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-09-01 — Async property provider (T-009, issue #7)
+
+**Tasks:** T-009
+
+- Fixed GH issue #7: `properties: ({ tag, node, context }) => object | Promise<object>` on `renderToString` + all six adapters — seed server-fetched properties before render, merged `defaults < provider < attributes`. Single-object argument so the shape grows without signature breaks.
+- New opaque `context` option, set by every adapter to its native per-request object (`APIContext` / `RequestEvent` / `H3Event` / `{ request, response }` / `this.page` / Vite's `transformIndexHtml` context) — deliberately no `context` option on the adapters themselves.
+- Render passes stay synchronous (preserves the T-026 lang guarantee): instances keyed by tag + parsed markup, provider calls run in parallel between passes interleaved with resolution; identical instances share one call; components in generated templates get provided via the fixpoint. New `MAXIMUM_PASSES` guard fails non-deterministic templates loudly instead of hanging.
+- Failures isolated like a throwing `template()` (element untouched, `onError` once per tag, own default report); non-object returns throw loudly. Sidecar `<tag>.properties.js` documented as a provider recipe (Node + `import.meta.glob` variants). +20 tests (suite at 155); docs API (`properties` section) + limitations.
+- Also: new project-wide naming convention (no abbreviated identifiers) — renamed `ctx`/`mod`/`props` across source, tests, docs; recorded in `CLAUDE.md`.
+
 ## 2026-09-01 — Release 0.3.0
 
 **Tasks:** T-025, T-026, T-027, T-028

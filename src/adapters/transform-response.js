@@ -17,7 +17,11 @@ import { renderToString } from "../render-to-string.js";
  *   exclude?: string[] | ((tag: string) => boolean),
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
- * }} [options] - forwarded to {@link renderToString}
+ *   transforms?: { pre?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[], post?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[] },
+ *   properties?: import("../render-to-string.js").PropertyProvider,
+ *   context?: *,
+ * }} [options] - forwarded to {@link renderToString}; the calling adapter sets `context` to its
+ *   framework's native per-request object for the `properties` provider
  * @return {Promise<Response>} the original response if non-HTML, else a new one with the same
  *   status/headers and the custom elements pre-rendered
  */
