@@ -499,6 +499,34 @@ function defaultResolveErrorReport(tag, error) {
   );
 }
 
+/** The dom-shim stamps its own `document` with this marker; a real DOM's document never has it. */
+const SHIM_DOCUMENT = Symbol.for("element-js-ssr-renderer:dom-shim");
+
+/** The shim document's `documentElement`, or `undefined` when a real/foreign DOM is present. */
+function shimDocumentElement() {
+  const doc = globalThis.document;
+  return doc?.[SHIM_DOCUMENT] ? doc.documentElement : undefined;
+}
+
+/**
+ * Adopt the input document's `<html lang>` onto the shim's `documentElement` for this transform
+ * pass (T-026): components reading `document.documentElement.lang` during `template()` — `Intl`
+ * formatting, i18n lookups — must see the page's language, not the shim's `'en'` default, or
+ * every non-English page silently bakes the English variant into its output. Runs at the start of
+ * each pass, which is synchronous end-to-end, so even interleaved concurrent renders of different
+ * pages each see their own value while their components render. An input without an `<html lang>`
+ * leaves the current value alone (pre-set it before rendering to define your own default);
+ * `renderToString` restores the previous value after the render. Only the shim's own document is
+ * ever touched — a real DOM (browser, happy-dom, jsdom) stays foreign.
+ * @param {import('node-html-parser').HTMLElement} root - the parsed input document
+ */
+function adoptDocumentLang(root) {
+  const documentElement = shimDocumentElement();
+  if (!documentElement) return;
+  const lang = root.querySelector("html")?.getAttribute("lang");
+  if (lang) documentElement.lang = lang;
+}
+
 /**
  * Parse `html`, pre-render every custom element found in `resolved`, and stringify. Pure over
  * (`html`, `resolved`), so the resolution fixpoint can call it repeatedly with a growing map of
@@ -512,6 +540,7 @@ function defaultResolveErrorReport(tag, error) {
  */
 function runTransform(html, resolved, onUnresolved, serializeState, onError) {
   const root = parse(html, PARSE_OPTIONS);
+  adoptDocumentLang(root);
   // Collect global styles up front, before any generated shadow templates are spliced in, so we
   // only ever adopt the input document's own stylesheets.
   const globalStyles = collectGlobalStyles(root);
@@ -793,6 +822,12 @@ function composeSources(sources) {
  * before resolution, its module is never resolved or imported on the server (even when the tag is
  * present in `resolve`). Module-scope side effects of client-only components never run.
  *
+ * The input's `<html lang>` is adopted onto the dom-shim's `document.documentElement.lang` for the
+ * duration of the render (T-026), so components that read it — `Intl` formatting, i18n lookups —
+ * render the page's language instead of the shim's `'en'` default; the previous value is restored
+ * afterwards. An input without the attribute leaves the current value alone (pre-set it to define
+ * your own default), and a real DOM's document (browser, happy-dom, jsdom) is never touched.
+ *
  * @param {string} html - an HTML document or fragment (e.g. a framework's rendered response)
  * @param {{
  *   resolve?: Catalog | ((tag: string) => *) | Array<Catalog | ((tag: string) => *)>,
@@ -836,52 +871,65 @@ export async function renderToString(
   // one. Each tag resolves at most once (see `attempted`), so this maps tag -> its one error.
   const resolveErrors = new Map();
 
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const misses = new Set();
-    // Render errors are re-collected each pass (passes re-render from the original html); only the
-    // converged pass's set is reported, so each failing tag surfaces exactly once (T-020).
-    const errors = new Map(); // tag -> first error thrown rendering that tag this pass
-    const out = runTransform(
-      html,
-      resolved,
-      // Excluded tags (T-023) never enter the miss set: they are unresolved-by-choice, so they are
-      // neither resolved/imported below nor warned about at convergence.
-      (tag) => {
-        if (!excluded(tag)) misses.add(tag);
-      },
-      serializeState,
-      (tag, error) => {
-        if (!errors.has(tag)) errors.set(tag, error);
-      },
-    );
+  // The transform passes adopt the input's `<html lang>` onto the shim document (T-026); restore
+  // the pre-render value afterwards so it never leaks into a later render of a different page (an
+  // input without a lang attribute keeps whatever the consumer pre-set as their default).
+  const documentElement = shimDocumentElement();
+  const previousLang = documentElement?.lang;
 
-    const fresh = [...misses].filter((tag) => !attempted.has(tag));
-    if (fresh.length === 0) {
-      // Converged. Anything still missing is genuinely unresolvable — surface it (warn by default).
-      // A resolve-failed tag is NOT among them: the consumer knows the tag, its module is just
-      // broken — it gets the (louder) resolve-error report below instead of the unresolved warning.
-      if (warn)
-        for (const tag of misses)
-          if (!resolved[tag] && !resolveErrors.has(tag)) warn(tag);
-      for (const [tag, error] of resolveErrors) reportResolveError(tag, error);
-      for (const [tag, error] of errors) reportError(tag, error);
-      return out;
+  try {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const misses = new Set();
+      // Render errors are re-collected each pass (passes re-render from the original html); only the
+      // converged pass's set is reported, so each failing tag surfaces exactly once (T-020).
+      const errors = new Map(); // tag -> first error thrown rendering that tag this pass
+      const out = runTransform(
+        html,
+        resolved,
+        // Excluded tags (T-023) never enter the miss set: they are unresolved-by-choice, so they are
+        // neither resolved/imported below nor warned about at convergence.
+        (tag) => {
+          if (!excluded(tag)) misses.add(tag);
+        },
+        serializeState,
+        (tag, error) => {
+          if (!errors.has(tag)) errors.set(tag, error);
+        },
+      );
+
+      const fresh = [...misses].filter((tag) => !attempted.has(tag));
+      if (fresh.length === 0) {
+        // Converged. Anything still missing is genuinely unresolvable — surface it (warn by default).
+        // A resolve-failed tag is NOT among them: the consumer knows the tag, its module is just
+        // broken — it gets the (louder) resolve-error report below instead of the unresolved warning.
+        if (warn)
+          for (const tag of misses)
+            if (!resolved[tag] && !resolveErrors.has(tag)) warn(tag);
+        for (const [tag, error] of resolveErrors)
+          reportResolveError(tag, error);
+        for (const [tag, error] of errors) reportError(tag, error);
+        return out;
+      }
+
+      for (const tag of fresh) attempted.add(tag);
+      await Promise.all(
+        fresh.map(async (tag) => {
+          // Isolate resolution failures (T-025): without the catch, one rejected import would fail
+          // the whole page render. The tag stays out of `resolved` (and in `attempted`), so the
+          // fixpoint neither retries nor loops on it.
+          try {
+            const entry = await toResolvedEntry(await resolver(tag), tag);
+            if (entry) resolved[tag] = entry;
+          } catch (error) {
+            resolveErrors.set(tag, error);
+          }
+        }),
+      );
     }
-
-    for (const tag of fresh) attempted.add(tag);
-    await Promise.all(
-      fresh.map(async (tag) => {
-        // Isolate resolution failures (T-025): without the catch, one rejected import would fail
-        // the whole page render. The tag stays out of `resolved` (and in `attempted`), so the
-        // fixpoint neither retries nor loops on it.
-        try {
-          const entry = await toResolvedEntry(await resolver(tag), tag);
-          if (entry) resolved[tag] = entry;
-        } catch (error) {
-          resolveErrors.set(tag, error);
-        }
-      }),
-    );
+  } finally {
+    // Runs whether the render returned or threw (a rethrowing onError): the shim must not keep
+    // this page's language either way.
+    if (documentElement) documentElement.lang = previousLang;
   }
 }

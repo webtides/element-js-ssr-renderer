@@ -19,7 +19,8 @@
   `requestAnimationFrame`, …) exist so real-world component modules import and construct cleanly — but they
   return neutral values: media queries never match, storage reads yield `null`, observers observe nothing
   and `requestAnimationFrame` callbacks never fire. Server output reflects those defaults; branch on real
-  values in `connected()`, which runs on the client only. See
+  values in `connected()`, which runs on the client only. The one page-aware value:
+  `document.documentElement.lang` follows the input's `<html lang>` during a render. See
   [Installation → What the shim provides](/guide/installation#what-the-shim-provides).
 - **Light-DOM introspection is read-only.** The children/query surface hands the template parsed-HTML nodes —
   a close but not identical Element API, sufficient for the read-only introspection templates do, not for

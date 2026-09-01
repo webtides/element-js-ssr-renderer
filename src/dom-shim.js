@@ -53,6 +53,10 @@ if (typeof globalThis.document === "undefined") {
   // `Array.from(globalThis.document?.styleSheets)` and spreads `document.adoptedStyleSheets`,
   // so both must be iterable.
   globalThis.document = {
+    // Marks this document as the shim's own, so the renderer knows it may adjust it per render
+    // (e.g. adopting the input page's `<html lang>`, T-026) — a real DOM's document never carries
+    // the marker and is never touched.
+    [Symbol.for("element-js-ssr-renderer:dom-shim")]: true,
     styleSheets: [],
     scripts: [],
     adoptedStyleSheets: [],

@@ -38,6 +38,12 @@ match, `requestAnimationFrame` callbacks never fire) and installed only where th
 already provide the API — a real DOM (browser, happy-dom, jsdom) is never touched. Code needing real
 behavior from these APIs belongs behind `connected()` — it runs on the client only.
 
+One value is page-aware rather than fixed: during a render, `renderToString` adopts the input document's
+`<html lang>` onto the shim's `document.documentElement.lang` (and restores it afterwards), so components
+reading it — `Intl` formatting, i18n lookups — render the page's language instead of the `'en'` default.
+An input without the attribute keeps the current value; set `document.documentElement.lang` yourself before
+rendering to define your own default.
+
 ## On the client
 
 The renderer only produces markup. To make the pre-rendered elements upgrade and **hydrate**, import the

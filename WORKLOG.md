@@ -21,6 +21,15 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-09-01 — Adopt `<html lang>` during render (T-026, issue #10)
+
+**Tasks:** T-026
+
+- Fixed GH issue #10: each transform pass sets the input's `<html lang>` on the shim's `documentElement` (read from the parsed tree, not the issue's regex), so lang-dependent components (`Intl`, i18n) render the page's language instead of the `'en'` default; `renderToString` restores the previous value in a `finally`.
+- Per-pass (synchronous) placement means interleaved concurrent renders each see their own value; inputs without the attribute keep the current value, so pre-setting the shim value stays the consumer default mechanism — no new option.
+- Shim document now carries a `Symbol.for("element-js-ssr-renderer:dom-shim")` marker; only a marked (own) document is ever mutated — real DOMs stay untouched.
+- +4 tests (suite at 118); docs: installation shim section, limitations bullet.
+
 ## 2026-09-01 — Resolver failure isolation (T-025, issue #9)
 
 **Tasks:** T-025

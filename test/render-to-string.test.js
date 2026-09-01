@@ -736,6 +736,61 @@ describe("resolver failure isolation", () => {
   });
 });
 
+// The input's `<html lang>` is adopted onto the shim's documentElement during the render, so
+// lang-dependent components (Intl, i18n) see the page's language instead of the shim's 'en'
+// default (T-026, issue #10).
+class XLang extends TemplateElement {
+  template() {
+    return html`<span>${globalThis.document.documentElement.lang}</span>`;
+  }
+}
+
+describe("document language adoption", () => {
+  const langCatalog = { "x-lang": XLang };
+  const renderLang = (input) => renderToString(input, { resolve: langCatalog });
+
+  it("renders components with the input document's <html lang>", async () => {
+    const out = await renderLang(
+      '<html lang="de"><body><x-lang></x-lang></body></html>',
+    );
+    expect(out).toContain("-->de<!--");
+  });
+
+  it("restores the previous shim value after the render", async () => {
+    await renderLang('<html lang="fr"><body><x-lang></x-lang></body></html>');
+    expect(globalThis.document.documentElement.lang).toBe("en");
+  });
+
+  it("leaves the current value alone when the input carries no lang", async () => {
+    globalThis.document.documentElement.lang = "es";
+    try {
+      const noAttr = await renderLang(
+        "<html><body><x-lang></x-lang></body></html>",
+      );
+      expect(noAttr).toContain("-->es<!--");
+      const fragment = await renderLang("<x-lang></x-lang>");
+      expect(fragment).toContain("-->es<!--");
+    } finally {
+      globalThis.document.documentElement.lang = "en";
+    }
+  });
+
+  it("restores even when the render fails fast via a rethrowing onError", async () => {
+    await expect(
+      renderToString(
+        '<html lang="it"><body><x-broken-lang></x-broken-lang></body></html>',
+        {
+          resolve: { "x-broken-lang": () => Promise.reject(new Error("boom")) },
+          onError: (_tag, error) => {
+            throw error;
+          },
+        },
+      ),
+    ).rejects.toThrow("boom");
+    expect(globalThis.document.documentElement.lang).toBe("en");
+  });
+});
+
 // A plain stateful shadow component: its `count`/`label` properties form its serializable state.
 class StateCounter extends TemplateElement {
   constructor() {

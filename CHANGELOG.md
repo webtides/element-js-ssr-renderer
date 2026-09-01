@@ -13,6 +13,11 @@ bumps may contain behavior changes).
   tag's elements are left untouched, siblings still render, and the failure reports through the existing
   `onError(tag, error)` hook (with its own default log noting that a resolve failure hits every page
   containing the tag). `onUnresolved` is not called for such tags; rethrow from `onError` to fail fast.
+- **`<html lang>` adoption** (T-026, #10) — `renderToString` adopts the input document's `<html lang>` onto
+  the dom-shim's `document.documentElement.lang` for the duration of the render (restored afterwards), so
+  lang-dependent components (`Intl` formatting, i18n lookups) render the page's language instead of the
+  shim's `'en'` default. No new option: an input without the attribute keeps the current value (pre-set it
+  to define your own default), and a real DOM's document is never touched.
 
 ### Changed
 
