@@ -483,6 +483,23 @@ function defaultErrorReport(tag, error) {
 }
 
 /**
+ * The default report for a failed resolution (T-025): like {@link defaultErrorReport} it is NOT
+ * dev-only — the element is silently left unrendered, so a log line is production's only trace.
+ * Unlike a render error, a resolve failure (a rejected dynamic import, a broken catalog entry) is
+ * not content-dependent: the same tag will fail on every page that contains it.
+ * @param {string} tag
+ * @param {Error} error
+ */
+function defaultResolveErrorReport(tag, error) {
+  console.error(
+    `[element-js-ssr-renderer] <${tag}> failed to resolve during SSR — left unrendered. ` +
+      `Its module or catalog entry is broken (this hits every page with the tag, and likely ` +
+      `the client too).`,
+    error,
+  );
+}
+
+/**
  * Parse `html`, pre-render every custom element found in `resolved`, and stringify. Pure over
  * (`html`, `resolved`), so the resolution fixpoint can call it repeatedly with a growing map of
  * resolved tags (see {@link renderToString}).
@@ -602,8 +619,9 @@ function isComponentConfig(value) {
  * Normalize what a source yielded — a bare class or a {@link ComponentConfig} (whose `component`
  * may still be a lazy loader, e.g. when returned from a custom resolver function) — into the
  * uniform {@link ResolvedEntry} the transform renders against. A config whose `component` doesn't
- * resolve to an element class is a programming error and throws, naming the tag; any other
- * unrecognized value resolves to `undefined` (→ the unresolved-tag path).
+ * resolve to an element class is a programming error and throws, naming the tag — `renderToString`
+ * isolates it like any other resolve failure (T-025), so it surfaces via `onError`, not as a page
+ * failure; any other unrecognized value resolves to `undefined` (→ the unresolved-tag path).
  * @param {*} value
  * @param {string} tag
  * @return {Promise<ResolvedEntry | undefined>}
@@ -764,6 +782,10 @@ function composeSources(sources) {
  * not fail the page: the element is left untouched — like an unresolved tag, its authored markup
  * survives and can still hydrate client-side — and `onError` is called once per failing tag
  * (default: a `console.error`). To fail fast instead, rethrow from your own `onError` (T-020).
+ * The same isolation covers **resolution** failures (T-025): a lazy loader whose import rejects
+ * (syntax error, missing dependency, bad path), a throwing resolver function, or an invalid
+ * {@link ComponentConfig} leaves that tag's elements untouched and reports through `onError` too —
+ * `onUnresolved` is not called for it (the tag is known, its module is just broken).
  *
  * `exclude` declares tags as **client-only** (T-023): overlays like modals or cookie-consent
  * banners that must stay inert until their JS runs. An excluded tag is unresolved-by-choice — the
@@ -786,7 +808,8 @@ function composeSources(sources) {
  *   `(tag) => boolean` predicate declaring tags client-only: left untouched, never resolved or
  *   imported, no unresolved warning. `onUnresolved` is called once per custom-element tag that no
  *   source could resolve; it defaults to a dev-only warning (pass `() => {}` to silence).
- *   `onError` is called once per tag whose component threw while rendering; it defaults to a
+ *   `onError` is called once per tag whose component threw while rendering — or whose resolution
+ *   failed (rejected import, throwing resolver, invalid config); it defaults to a
  *   `console.error` (not dev-only), and rethrowing from it fails the whole render.
  *   `serializeState` (default `false`) opts into client state transport.
  * @return {Promise<string>} the HTML with custom elements pre-rendered
@@ -802,9 +825,16 @@ export async function renderToString(
   const excluded = toExcludeFilter(exclude);
   const warn = onUnresolved ?? defaultUnresolvedWarning();
   const reportError = onError ?? defaultErrorReport;
+  // Resolve failures share the render-error channel (one hook to wire, existing `onError` logging
+  // covers them for free); only the *default* report differs, flagging the every-page nature.
+  const reportResolveError = onError ?? defaultResolveErrorReport;
 
   const resolved = {}; // tag -> class; the map handed to each transform pass, growing each time
   const attempted = new Set(); // tags we've already tried, so genuine misses don't loop forever
+  // Resolution failures (T-025): a rejected loader / resolver or an invalid ComponentConfig is as
+  // per-component as a throwing template() — isolated, the tag left untouched like an unresolved
+  // one. Each tag resolves at most once (see `attempted`), so this maps tag -> its one error.
+  const resolveErrors = new Map();
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -829,7 +859,12 @@ export async function renderToString(
     const fresh = [...misses].filter((tag) => !attempted.has(tag));
     if (fresh.length === 0) {
       // Converged. Anything still missing is genuinely unresolvable — surface it (warn by default).
-      if (warn) for (const tag of misses) if (!resolved[tag]) warn(tag);
+      // A resolve-failed tag is NOT among them: the consumer knows the tag, its module is just
+      // broken — it gets the (louder) resolve-error report below instead of the unresolved warning.
+      if (warn)
+        for (const tag of misses)
+          if (!resolved[tag] && !resolveErrors.has(tag)) warn(tag);
+      for (const [tag, error] of resolveErrors) reportResolveError(tag, error);
       for (const [tag, error] of errors) reportError(tag, error);
       return out;
     }
@@ -837,8 +872,15 @@ export async function renderToString(
     for (const tag of fresh) attempted.add(tag);
     await Promise.all(
       fresh.map(async (tag) => {
-        const entry = await toResolvedEntry(await resolver(tag), tag);
-        if (entry) resolved[tag] = entry;
+        // Isolate resolution failures (T-025): without the catch, one rejected import would fail
+        // the whole page render. The tag stays out of `resolved` (and in `attempted`), so the
+        // fixpoint neither retries nor loops on it.
+        try {
+          const entry = await toResolvedEntry(await resolver(tag), tag);
+          if (entry) resolved[tag] = entry;
+        } catch (error) {
+          resolveErrors.set(tag, error);
+        }
       }),
     );
   }

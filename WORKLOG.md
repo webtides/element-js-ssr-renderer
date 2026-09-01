@@ -21,6 +21,15 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-09-01 — Resolver failure isolation (T-025, issue #9)
+
+**Tasks:** T-025
+
+- Fixed GH issue #9: a rejected `resolve()` — a lazy loader whose dynamic import fails, a throwing resolver function, an invalid `ComponentConfig` — no longer fails whole-page `renderToString`. The tag's elements are left untouched (like unresolved), siblings render; the fixpoint loop's per-tag resolution is try/caught and failed tags stay in `attempted`, so no retry/loop.
+- Deviation from the issue's `onResolveError` alternative: resolve failures report through the existing `onError(tag, error)` channel (existing consumer logging covers them automatically); only the default report differs, noting a resolve failure hits every page with the tag. `onUnresolved` is not called for such tags; fail-fast remains rethrow-from-`onError`.
+- The invalid-ComponentConfig `TypeError` is now isolated too (same "resolution broken" class) — its test flipped from expects-reject to expects-isolated.
+- +6 tests (suite at 114); docs: API `onError` section, limitations bullet.
+
 ## 2026-08-28 — Release 0.2.0
 
 **Tasks:** T-019, T-020, T-021, T-022, T-023, T-024

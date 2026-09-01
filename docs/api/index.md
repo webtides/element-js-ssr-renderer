@@ -28,7 +28,7 @@ renderToString(
 | `options.resolve`        | A [`Catalog`](#catalog) (a `{ tag: … }` map of eager classes and/or lazy loaders, auto-detected) or a [resolver function](#resolvefn) — or an array of either, composed **later-wins** on a tag clash. |
 | `options.exclude`        | Tags to leave client-only: a list (case-insensitive) or a `(tag) => boolean` predicate. See [below](#exclude).                                                                                         |
 | `options.onUnresolved`   | Called once per custom-element-looking tag (contains `-`) that no source resolves. See [below](#onunresolved).                                                                                         |
-| `options.onError`        | Called once per tag whose component threw while rendering; the element is left untouched. See [below](#onerror).                                                                                       |
+| `options.onError`        | Called once per tag whose component threw while rendering or whose resolution failed; the element is left untouched. See [below](#onerror).                                                            |
 | `options.serializeState` | Opt into [client state transport](#serializestate). Defaults to `false`.                                                                                                                               |
 
 **Returns** a `Promise` of the HTML with every resolved custom element pre-rendered in place.
@@ -197,6 +197,14 @@ siblings and nested elements still pre-render, and it can still hydrate client-s
 logs each failing tag via `console.error` — **not** dev-only, since with the element silently left
 unrendered a log line is a production page's only trace of the failure. Pass your own to route or silence
 it — or **rethrow inside it to fail the whole render** instead (fail-fast, e.g. during development or tests).
+
+The same channel covers **resolution failures**: a lazy loader whose dynamic import rejects (syntax error,
+missing dependency, bad path in a catalog), a throwing resolver function, or an invalid
+[`ComponentConfig`](#componentconfig). The tag's elements are left untouched exactly as above, and
+`onUnresolved` is **not** called — the tag is known, its module is just broken. The two classes differ in
+reach (a render error can be content-dependent; a resolve failure hits every page containing the tag — the
+default log says so), and your handler can tell them apart by the error itself. One broken component module
+never takes down the pages that contain its tag.
 
 ### `serializeState`
 

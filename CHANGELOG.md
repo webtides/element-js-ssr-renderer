@@ -4,6 +4,22 @@ All notable changes to `@webtides/element-js-ssr-renderer` are documented here. 
 [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/) (0.x: minor
 bumps may contain behavior changes).
 
+## [Unreleased]
+
+### Added
+
+- **Resolver failure isolation** (T-025, #9) — a rejected `resolve()` (a lazy loader whose dynamic import
+  fails, a throwing resolver function, an invalid `ComponentConfig`) no longer fails the whole page: the
+  tag's elements are left untouched, siblings still render, and the failure reports through the existing
+  `onError(tag, error)` hook (with its own default log noting that a resolve failure hits every page
+  containing the tag). `onUnresolved` is not called for such tags; rethrow from `onError` to fail fast.
+
+### Changed
+
+- An invalid `ComponentConfig` (a `component` that is not, and does not resolve to, an element class)
+  previously rejected the whole `renderToString` call; it is now isolated like any other resolve failure
+  (see above).
+
 ## [0.2.0] — 2026-08-28
 
 All six issues from the first production integrations, in one release.
@@ -49,5 +65,6 @@ Initial release: `renderToString` (Declarative Shadow DOM, hydration markers, la
 catalogs and resolver functions, `glob` escape hatch, state transport (`serializeState`), dom-shim,
 framework adapters (Astro, Nuxt, SvelteKit, Vite, Eleventy, Node), catalog generator + CLI.
 
+[unreleased]: https://github.com/webtides/element-js-ssr-renderer/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/webtides/element-js-ssr-renderer/releases/tag/v0.2.0
 [0.1.0]: https://www.npmjs.com/package/@webtides/element-js-ssr-renderer/v/0.1.0

@@ -529,12 +529,17 @@ describe("ComponentConfig resolve values", () => {
     expect(shadowOf(out)).toContain(".fn {}");
   });
 
-  it("throws a clear error when component is missing or not a class", async () => {
-    await expect(
-      renderToString("<x-card></x-card>", {
-        resolve: { "x-card": { styles: ".oops {}", component: {} } },
-      }),
-    ).rejects.toThrow(/<x-card>.*component/s);
+  it("reports a clear error when component is missing or not a class (isolated, T-025)", async () => {
+    const onError = vi.fn();
+    const out = await renderToString("<x-card>kept</x-card>", {
+      resolve: { "x-card": { styles: ".oops {}", component: {} } },
+      onError,
+    });
+    // an invalid config is a resolve failure: isolated like a rejected import, not a page failure
+    expect(out).toContain("<x-card>kept</x-card>");
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0]).toBe("x-card");
+    expect(onError.mock.calls[0][1].message).toMatch(/<x-card>.*component/s);
   });
 });
 
@@ -636,6 +641,98 @@ describe("per-component error isolation", () => {
         },
       }),
     ).rejects.toThrow("boom-template");
+  });
+});
+
+// A rejected `resolve()` — a lazy loader whose dynamic import fails, a throwing resolver function,
+// a broken catalog entry — is as per-component as a throwing template() and must not take down the
+// whole-page render (T-025, issue #9).
+describe("resolver failure isolation", () => {
+  const failingCatalog = {
+    ...catalog,
+    "x-broken": () => Promise.reject(new Error("boom-import")),
+  };
+
+  it("leaves the failing tag untouched and still renders its siblings", async () => {
+    const onError = vi.fn();
+    const out = await renderToString(
+      '<x-broken><span class="kept">authored</span></x-broken><el-button>ok</el-button>',
+      { resolve: failingCatalog, onError },
+    );
+    expect(out).toContain(
+      '<x-broken><span class="kept">authored</span></x-broken>',
+    );
+    expect(out).toContain('<template shadowrootmode="open">');
+  });
+
+  it("reports through onError once per tag, with the rejection error", async () => {
+    const onError = vi.fn();
+    await renderToString("<x-broken>1</x-broken><x-broken>2</x-broken>", {
+      resolve: failingCatalog,
+      onError,
+    });
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0]).toBe("x-broken");
+    expect(onError.mock.calls[0][1].message).toBe("boom-import");
+  });
+
+  it("does not call onUnresolved for a resolve-failed tag", async () => {
+    const onUnresolved = vi.fn();
+    await renderToString("<x-broken></x-broken><x-unknown></x-unknown>", {
+      resolve: failingCatalog,
+      onError: () => {},
+      onUnresolved,
+    });
+    // the genuinely unknown tag still warns; the broken one is known, just failed
+    expect(onUnresolved).toHaveBeenCalledTimes(1);
+    expect(onUnresolved).toHaveBeenCalledWith("x-unknown");
+  });
+
+  it("isolates a synchronously throwing resolver function too", async () => {
+    const onError = vi.fn();
+    const out = await renderToString(
+      "<x-sync></x-sync><el-button>ok</el-button>",
+      {
+        resolve: [
+          catalog,
+          (tag) => {
+            if (tag === "x-sync") throw new Error("boom-sync");
+          },
+        ],
+        onError,
+      },
+    );
+    expect(out).toContain("<x-sync></x-sync>");
+    expect(out).toContain('<template shadowrootmode="open">');
+    expect(onError).toHaveBeenCalledWith("x-sync", expect.any(Error));
+  });
+
+  it("logs via console.error by default, also in production", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      await renderToString("<x-broken></x-broken>", {
+        resolve: failingCatalog,
+      });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0][0]).toContain("<x-broken>");
+      expect(spy.mock.calls[0][0]).toContain("failed to resolve");
+    } finally {
+      process.env.NODE_ENV = prev;
+      spy.mockRestore();
+    }
+  });
+
+  it("fails the whole render when onError rethrows (fail-fast opt-in)", async () => {
+    await expect(
+      renderToString("<x-broken></x-broken>", {
+        resolve: failingCatalog,
+        onError: (_tag, error) => {
+          throw error;
+        },
+      }),
+    ).rejects.toThrow("boom-import");
   });
 });
 
@@ -766,7 +863,10 @@ describe("excluding tags from SSR (exclude)", () => {
   it("leaves an excluded tag untouched while siblings still render", async () => {
     const out = await renderToString(
       "<x-modal><p>authored</p></x-modal><el-button>ok</el-button>",
-      { resolve: { "x-modal": Modal, "el-button": Button }, exclude: ["x-modal"] },
+      {
+        resolve: { "x-modal": Modal, "el-button": Button },
+        exclude: ["x-modal"],
+      },
     );
     // unresolved-by-choice: authored markup survives, nothing server-rendered
     expect(out).toContain("<x-modal><p>authored</p></x-modal>");

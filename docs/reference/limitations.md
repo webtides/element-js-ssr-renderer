@@ -12,8 +12,9 @@
 - **Per-component error isolation.** A component whose constructor, `properties()`, `template()` or
   `serializeState()` throws during SSR does not fail the page: the element is left untouched (its authored
   markup survives and hydrates client-side), and the error surfaces via the `onError` hook — by default a
-  `console.error`, also in production. Rethrow from your own `onError` to fail fast instead. See
-  [API → onError](/api/#onerror).
+  `console.error`, also in production. The same holds when a tag's **resolution** fails — a lazy loader whose
+  dynamic import rejects, a throwing resolver function, a broken catalog entry. Rethrow from your own
+  `onError` to fail fast instead. See [API → onError](/api/#onerror).
 - **The dom-shim is inert.** Browser APIs the shim provides (`matchMedia`, observers, storage, `location`,
   `requestAnimationFrame`, …) exist so real-world component modules import and construct cleanly — but they
   return neutral values: media queries never match, storage reads yield `null`, observers observe nothing
