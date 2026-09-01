@@ -64,6 +64,7 @@ import { renderToString } from "../render-to-string.js";
  *   exclude?: string[] | ((tag: string) => boolean),
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
+ *   transforms?: { pre?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[], post?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[] },
  * }} [options]
  * @return {(this: { page?: { outputPath?: string | false } }, content: string) => string | Promise<string>}
  *   an Eleventy transform — pass it to `eleventyConfig.addTransform(name, fn)`
@@ -74,8 +75,16 @@ export function elementSSR({
   exclude,
   onError,
   serializeState = false,
+  transforms,
 } = {}) {
-  const options = { resolve, exclude, onUnresolved, onError, serializeState };
+  const options = {
+    resolve,
+    exclude,
+    onUnresolved,
+    onError,
+    serializeState,
+    transforms,
+  };
   // Regular function (not arrow): Eleventy invokes the transform with `this.page` bound, which an
   // arrow function could not read. Runs for every output file, so gate on the .html output path —
   // `outputPath` can be `false` for `permalink: false` pages, hence the `|| ""`.

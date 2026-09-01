@@ -18,6 +18,10 @@ renderToString(
     onUnresolved?: (tag: string) => void,
     onError?: (tag: string, error: Error) => void,
     serializeState?: boolean,
+    transforms?: {
+      pre?: PageTransform | PageTransform[],
+      post?: PageTransform | PageTransform[],
+    },
   },
 ): Promise<string>
 ```
@@ -30,6 +34,7 @@ renderToString(
 | `options.onUnresolved`   | Called once per custom-element-looking tag (contains `-`) that no source resolves. See [below](#onunresolved).                                                                                         |
 | `options.onError`        | Called once per tag whose component threw while rendering or whose resolution failed; the element is left untouched. See [below](#onerror).                                                            |
 | `options.serializeState` | Opt into [client state transport](#serializestate). Defaults to `false`.                                                                                                                               |
+| `options.transforms`     | Page-level `pre`/`post` transform pipeline around the render. See [below](#transforms).                                                                                                                |
 
 **Returns** a `Promise` of the HTML with every resolved custom element pre-rendered in place.
 
@@ -86,6 +91,10 @@ options?: {
   onUnresolved?: (tag: string) => void,
   onError?: (tag: string, error: Error) => void,
   serializeState?: boolean,
+  transforms?: {
+    pre?: PageTransform | PageTransform[],
+    post?: PageTransform | PageTransform[],
+  },
 }
 ```
 
@@ -216,6 +225,61 @@ are emitted as `Store/<key>` references and a shared store is serialized once. R
 [State transport](/concepts/#state-transport) for the format and caveats. The same option is accepted by the
 [Astro](/frameworks/astro), [Nuxt](/frameworks/nuxt) and [SvelteKit](/frameworks/sveltekit) `elementSSR`
 adapters.
+
+### `transforms`
+
+```ts
+type PageTransform = (html: string, ctx: object) => string | Promise<string>;
+
+transforms?: { pre?: PageTransform | PageTransform[], post?: PageTransform | PageTransform[] };
+```
+
+Every real integration ends up wrapping `renderToString` with page-level HTML processing — stripping an
+anti-FOUC cloaking block, extracting an inline config, inlining SVG sprite symbols, stamping an
+`<html data-ssr>` marker. None of it belongs in the renderer (it's project protocol), but the **shape** is
+always the same, so the renderer provides the pipeline: `pre` transforms run once on the input **before**
+any component rendering, `post` transforms once on the final output **after** the resolution fixpoint —
+each `(html, ctx) => html`, sync or async, in array order. This matters most with the
+[adapters](#elementssr-options), where you don't control the render call site: `transforms` is the one
+canonical place to hang that glue, portable across frameworks.
+
+```js
+await renderToString(html, {
+  resolve: catalog,
+  transforms: {
+    pre: [stripCloaking, extractAppConfig],
+    post: [inlineSpriteSymbols, markSsr],
+  },
+});
+```
+
+`ctx` is a shared per-render plain object: transforms stash values on it for one another and read what the
+renderer publishes. The renderer owns one key — before the first `post` transform runs it sets `ctx.tags`
+to what the render did:
+
+```ts
+ctx.tags: {
+  resolved: string[];   // tags rendered on this page
+  unresolved: string[]; // custom-element-looking tags no source resolved
+  excluded: string[];   // tags declared client-only via `exclude`
+  failed: string[];     // tags whose resolution or render failed (reported via onError)
+}
+```
+
+```js
+// e.g. stamp the page only when SSR actually did something — the client can
+// tell a transformed page from a fallback
+const markSsr = (html, ctx) =>
+  ctx.tags.resolved.length > 0 ? html.replace("<html", "<html data-ssr") : html;
+```
+
+Two guarantees, both deliberate:
+
+- **String in, string out.** No AST or DOM API is promised — every transform of this kind is happy on
+  strings, and the renderer shouldn't promise a parse tree.
+- **Loud failure.** Unlike per-component errors, a throwing transform (or one returning a non-string — a
+  forgotten `return`) fails the whole render: broken page-level glue means broken output, and callers have
+  a fallback path for exactly that case. A typo'd key (`posts`) throws instead of silently doing nothing.
 
 ## `lockdownFetch(options?)`
 

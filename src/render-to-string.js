@@ -499,6 +499,85 @@ function defaultResolveErrorReport(tag, error) {
   );
 }
 
+/**
+ * A **page-level transform** (T-028): `(html, ctx) => html`, sync or async. `pre` transforms run
+ * once on the input before any component rendering; `post` transforms run once on the final
+ * output after the resolution fixpoint converged. Each receives the previous transform's result
+ * (array order) plus the shared per-render {@link PageTransformContext}. String in, string out —
+ * no AST or DOM API is promised.
+ * @typedef {(html: string, ctx: PageTransformContext) => string | Promise<string>} PageTransform
+ */
+
+/**
+ * The shared per-render object handed to every page-level transform. A plain mutable object:
+ * transforms stash values on it for one another (e.g. what a `pre` extracted, for a `post` to
+ * re-insert). The renderer owns one key:
+ * @typedef {Object} PageTransformContext
+ * @property {{ resolved: string[], unresolved: string[], excluded: string[], failed: string[] }} [tags] -
+ *   set by the renderer after rendering, before the first `post` transform runs (absent during
+ *   `pre`): the tags that were rendered, the custom-element-looking tags no source resolved, the
+ *   tags excluded as client-only, and the tags whose resolution or render failed (reported via
+ *   `onError`).
+ */
+
+/**
+ * Validate and normalize the `transforms` option into `{ pre: fn[], post: fn[] }`. Loud on
+ * config mistakes — an unknown key (a typo'd `posts`) or a non-function entry would otherwise
+ * silently transform nothing.
+ * @param {{ pre?: PageTransform | PageTransform[], post?: PageTransform | PageTransform[] }} [transforms]
+ * @return {{ pre: PageTransform[], post: PageTransform[] }}
+ */
+function normalizeTransforms(transforms) {
+  if (transforms == null) return { pre: [], post: [] };
+  const unknown = Object.keys(transforms).filter(
+    (key) => key !== "pre" && key !== "post",
+  );
+  if (unknown.length > 0)
+    throw new TypeError(
+      `[element-js-ssr-renderer] unknown \`transforms\` key(s): ${unknown.join(", ")} — ` +
+        `only \`pre\` and \`post\` exist`,
+    );
+  const toList = (value, phase) => {
+    const list = value == null ? [] : Array.isArray(value) ? value : [value];
+    for (const transform of list)
+      if (typeof transform !== "function")
+        throw new TypeError(
+          `[element-js-ssr-renderer] \`transforms.${phase}\` must be a function or an array of functions`,
+        );
+    return list;
+  };
+  return {
+    pre: toList(transforms.pre, "pre"),
+    post: toList(transforms.post, "post"),
+  };
+}
+
+/**
+ * Run one transform phase in array order, awaiting each. Unlike per-component errors, a throwing
+ * page-level transform fails the whole render loudly — broken page-level glue means broken
+ * output, and callers have a fallback path for exactly that. A transform returning anything but
+ * a string (usually a forgotten `return`) is caught with a clear error instead of poisoning the
+ * pipeline.
+ * @param {PageTransform[]} list
+ * @param {"pre" | "post"} phase
+ * @param {string} html
+ * @param {PageTransformContext} ctx
+ * @return {Promise<string>}
+ */
+async function applyTransforms(list, phase, html, ctx) {
+  for (const transform of list) {
+    const result = await transform(html, ctx);
+    if (typeof result !== "string")
+      throw new TypeError(
+        `[element-js-ssr-renderer] \`transforms.${phase}\` transform ` +
+          `"${transform.name || "(anonymous)"}" returned ${result === undefined ? "undefined" : typeof result} — ` +
+          `a page-level transform must return the (possibly unchanged) HTML string`,
+      );
+    html = result;
+  }
+  return html;
+}
+
 /** The dom-shim stamps its own `document` with this marker; a real DOM's document never has it. */
 const SHIM_DOCUMENT = Symbol.for("element-js-ssr-renderer:dom-shim");
 
@@ -828,6 +907,14 @@ function composeSources(sources) {
  * afterwards. An input without the attribute leaves the current value alone (pre-set it to define
  * your own default), and a real DOM's document (browser, happy-dom, jsdom) is never touched.
  *
+ * `transforms` hangs **page-level** processing onto the render (T-028): `pre` transforms run once
+ * on the input before any component rendering (strip a cloaking block, extract config), `post`
+ * transforms once on the final output (inline sprite symbols, stamp a page marker) — each
+ * `(html, ctx) => html`, sync or async, in array order, sharing one {@link PageTransformContext}
+ * per render. The renderer sets `ctx.tags` (resolved/unresolved/excluded/failed) before the first
+ * `post` transform. Unlike per-component errors, a throwing transform fails the render loudly —
+ * broken page-level glue means broken output, and callers have a fallback path for exactly that.
+ *
  * @param {string} html - an HTML document or fragment (e.g. a framework's rendered response)
  * @param {{
  *   resolve?: Catalog | ((tag: string) => *) | Array<Catalog | ((tag: string) => *)>,
@@ -835,6 +922,7 @@ function composeSources(sources) {
  *   onUnresolved?: (tag: string) => void,
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
+ *   transforms?: { pre?: PageTransform | PageTransform[], post?: PageTransform | PageTransform[] },
  * }} [options]
  *   `resolve` is a {@link Catalog} (a `{ tag: Class }` / `import.meta.glob()` map, eager classes,
  *   lazy loaders and {@link ComponentConfig} objects auto-detected) or a `(tag) => …` resolver
@@ -846,14 +934,25 @@ function composeSources(sources) {
  *   `onError` is called once per tag whose component threw while rendering — or whose resolution
  *   failed (rejected import, throwing resolver, invalid config); it defaults to a
  *   `console.error` (not dev-only), and rethrowing from it fails the whole render.
- *   `serializeState` (default `false`) opts into client state transport.
+ *   `serializeState` (default `false`) opts into client state transport. `transforms` is the
+ *   page-level pre/post pipeline described above.
  * @return {Promise<string>} the HTML with custom elements pre-rendered
  */
 export async function renderToString(
   html,
-  { resolve, exclude, onUnresolved, onError, serializeState = false } = {},
+  {
+    resolve,
+    exclude,
+    onUnresolved,
+    onError,
+    serializeState = false,
+    transforms,
+  } = {},
 ) {
   setSerializeStateConfig(serializeState);
+  // Validated up front: a transforms config mistake must fail immediately, not mid-render.
+  const { pre, post } = normalizeTransforms(transforms);
+  const ctx = {}; // the shared PageTransformContext, one per render
   const sources =
     resolve == null ? [] : Array.isArray(resolve) ? resolve : [resolve];
   const resolver = composeSources(sources);
@@ -878,9 +977,14 @@ export async function renderToString(
   const previousLang = documentElement?.lang;
 
   try {
+    // Page-level `pre` transforms (T-028) run once, on the input — the fixpoint passes below
+    // re-render from their result, so injected/stripped markup is what components see.
+    html = await applyTransforms(pre, "pre", html, ctx);
+
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const misses = new Set();
+      const excludedTags = new Set();
       // Render errors are re-collected each pass (passes re-render from the original html); only the
       // converged pass's set is reported, so each failing tag surfaces exactly once (T-020).
       const errors = new Map(); // tag -> first error thrown rendering that tag this pass
@@ -890,7 +994,8 @@ export async function renderToString(
         // Excluded tags (T-023) never enter the miss set: they are unresolved-by-choice, so they are
         // neither resolved/imported below nor warned about at convergence.
         (tag) => {
-          if (!excluded(tag)) misses.add(tag);
+          if (excluded(tag)) excludedTags.add(tag);
+          else misses.add(tag);
         },
         serializeState,
         (tag, error) => {
@@ -909,7 +1014,16 @@ export async function renderToString(
         for (const [tag, error] of resolveErrors)
           reportResolveError(tag, error);
         for (const [tag, error] of errors) reportError(tag, error);
-        return out;
+
+        // What the render did, for the `post` transforms (renderer-owned ctx key, T-028) — e.g.
+        // stamp a page marker only if something rendered, emit preloads for resolved tags.
+        ctx.tags = {
+          resolved: Object.keys(resolved),
+          unresolved: [...misses].filter((tag) => !resolveErrors.has(tag)),
+          excluded: [...excludedTags],
+          failed: [...resolveErrors.keys(), ...errors.keys()],
+        };
+        return await applyTransforms(post, "post", out, ctx);
       }
 
       for (const tag of fresh) attempted.add(tag);

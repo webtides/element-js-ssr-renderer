@@ -973,3 +973,133 @@ describe("excluding tags from SSR (exclude)", () => {
     expect(out).not.toContain("server-rendered modal");
   });
 });
+// Page-level pre/post transform pipeline (T-028, issue #12): one canonical shape for the
+// html-processing glue every real integration ends up wrapping around the render call.
+describe("page-level transforms", () => {
+  it("runs pre transforms in order on the input, before component rendering", async () => {
+    const out = await renderToString("<main><!--slot--></main>", {
+      resolve: catalog,
+      transforms: {
+        pre: [
+          (input) =>
+            input.replace("<!--slot-->", "<el-button>injected</el-button>"),
+          (input) => input.replace("injected", "injected-then"),
+        ],
+      },
+    });
+    // the tag injected by a pre transform was rendered like authored markup
+    expect(out).toContain("shadowrootmode");
+    expect(out).toContain("injected-then");
+  });
+
+  it("runs post transforms in order on the rendered output", async () => {
+    const order = [];
+    const out = await renderToString("<el-button>hi</el-button>", {
+      resolve: catalog,
+      transforms: {
+        post: [
+          (rendered) => {
+            order.push("a");
+            return rendered + "<!--a-->";
+          },
+          (rendered) => {
+            order.push("b");
+            return rendered + "<!--b-->";
+          },
+        ],
+      },
+    });
+    expect(order).toEqual(["a", "b"]);
+    expect(out.endsWith("<!--a--><!--b-->")).toBe(true);
+    expect(out).toContain("shadowrootmode");
+  });
+
+  it("awaits async transforms and accepts a single function instead of an array", async () => {
+    const out = await renderToString("<p>x</p>", {
+      transforms: {
+        pre: [async (input) => input + "<!--pre-->"],
+        post: async (rendered) => rendered + "<!--post-->",
+      },
+    });
+    expect(out).toBe("<p>x</p><!--pre--><!--post-->");
+  });
+
+  it("shares one ctx object between pre and post transforms", async () => {
+    const out = await renderToString("<p></p>", {
+      transforms: {
+        pre: (input, ctx) => {
+          ctx.stash = "from-pre";
+          return input;
+        },
+        post: (rendered, ctx) => rendered + `<!--${ctx.stash}-->`,
+      },
+    });
+    expect(out).toContain("<!--from-pre-->");
+  });
+
+  it("exposes the render's tag info as ctx.tags to post transforms", async () => {
+    let tags;
+    await renderToString(
+      "<el-button>a</el-button><x-unknown></x-unknown>" +
+        "<x-modal></x-modal><x-broken></x-broken>",
+      {
+        resolve: {
+          ...catalog,
+          "x-broken": () => Promise.reject(new Error("boom")),
+        },
+        exclude: ["x-modal"],
+        onError: () => {},
+        onUnresolved: () => {},
+        transforms: {
+          post: (rendered, ctx) => {
+            tags = ctx.tags;
+            return rendered;
+          },
+        },
+      },
+    );
+    expect(tags.resolved).toContain("el-button");
+    expect(tags.unresolved).toEqual(["x-unknown"]);
+    expect(tags.excluded).toEqual(["x-modal"]);
+    expect(tags.failed).toEqual(["x-broken"]);
+  });
+
+  it("fails the whole render when a transform throws (loud, unlike component errors)", async () => {
+    await expect(
+      renderToString("<p></p>", {
+        transforms: {
+          pre: () => {
+            throw new Error("boom-pre");
+          },
+        },
+      }),
+    ).rejects.toThrow("boom-pre");
+    await expect(
+      renderToString("<p></p>", {
+        transforms: {
+          post: () => {
+            throw new Error("boom-post");
+          },
+        },
+      }),
+    ).rejects.toThrow("boom-post");
+  });
+
+  it("rejects a transform that does not return a string (forgotten return)", async () => {
+    await expect(
+      renderToString("<p></p>", {
+        transforms: {
+          post: function markSsr(rendered) {
+            rendered.replace("a", "b"); // no return
+          },
+        },
+      }),
+    ).rejects.toThrow(/markSsr.*undefined/s);
+  });
+
+  it("throws on a typo'd transforms key instead of silently doing nothing", async () => {
+    await expect(
+      renderToString("<p></p>", { transforms: { posts: [(input) => input] } }),
+    ).rejects.toThrow(/unknown.*posts/);
+  });
+});

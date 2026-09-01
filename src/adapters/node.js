@@ -50,6 +50,7 @@ import { renderToString } from "../render-to-string.js";
  *   exclude?: string[] | ((tag: string) => boolean),
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
+ *   transforms?: { pre?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[], post?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[] },
  * }} [options]
  * @return {(req: any, res: any, next: () => void) => void} a Connect-style middleware
  */
@@ -59,8 +60,16 @@ export function elementSSR({
   exclude,
   onError,
   serializeState = false,
+  transforms,
 } = {}) {
-  const options = { resolve, exclude, onUnresolved, onError, serializeState };
+  const options = {
+    resolve,
+    exclude,
+    onUnresolved,
+    onError,
+    serializeState,
+    transforms,
+  };
 
   return (req, res, next) => {
     const originalWrite = res.write;

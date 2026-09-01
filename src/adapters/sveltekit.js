@@ -41,6 +41,7 @@ import { renderToString } from "../render-to-string.js";
  *   exclude?: string[] | ((tag: string) => boolean),
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
+ *   transforms?: { pre?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[], post?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[] },
  * }} [options]
  * @return {(input: { event: any, resolve: (event: any, opts: { transformPageChunk: (chunk: { html: string, done: boolean }) => Promise<string> }) => any }) => any}
  */
@@ -50,8 +51,16 @@ export function elementSSR({
   exclude,
   onError,
   serializeState = false,
+  transforms,
 } = {}) {
-  const options = { resolve, exclude, onUnresolved, onError, serializeState };
+  const options = {
+    resolve,
+    exclude,
+    onUnresolved,
+    onError,
+    serializeState,
+    transforms,
+  };
   return ({ event, resolve: resolveEvent }) => {
     let buffer = "";
     return resolveEvent(event, {

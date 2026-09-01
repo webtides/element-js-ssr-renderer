@@ -42,6 +42,7 @@ import { transformHtmlResponse } from "./transform-response.js";
  *   exclude?: string[] | ((tag: string) => boolean),
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
+ *   transforms?: { pre?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[], post?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[] },
  * }} [options]
  * @return {(response: { body: unknown, headers?: Record<string, string>, statusCode?: number }) => Promise<void>}
  *   a `render:response` hook handler
@@ -52,8 +53,16 @@ export function elementSSR({
   exclude,
   onError,
   serializeState = false,
+  transforms,
 } = {}) {
-  const options = { resolve, exclude, onUnresolved, onError, serializeState };
+  const options = {
+    resolve,
+    exclude,
+    onUnresolved,
+    onError,
+    serializeState,
+    transforms,
+  };
   return async (response) => {
     // Only HTML page bodies (a string) are renderable; skip streams, buffers, etc.
     if (typeof response?.body !== "string") return;

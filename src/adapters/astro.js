@@ -54,6 +54,7 @@ import { transformHtmlResponse } from "./transform-response.js";
  *   exclude?: string[] | ((tag: string) => boolean),
  *   onError?: (tag: string, error: Error) => void,
  *   serializeState?: boolean,
+ *   transforms?: { pre?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[], post?: import("../render-to-string.js").PageTransform | import("../render-to-string.js").PageTransform[] },
  * }} [options]
  * @return {(context: any, next: () => Promise<Response>) => Promise<Response>}
  */
@@ -63,6 +64,7 @@ export function elementSSR({
   exclude,
   onError,
   serializeState = false,
+  transforms,
 } = {}) {
   return async (context, next) => {
     const response = await next();
@@ -72,6 +74,7 @@ export function elementSSR({
       onUnresolved,
       onError,
       serializeState,
+      transforms,
     });
   };
 }

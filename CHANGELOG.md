@@ -25,6 +25,14 @@ bumps may contain behavior changes).
   unhandled rejections); relative URLs are blocked; each blocked origin warns once by default
   (`onBlocked(origin, url)` to override). Repeated calls replace the policy; the returned function restores
   the previous `fetch`. Deliberately opt-in — importing the dom-shim alone changes nothing.
+- **Page-level transform pipeline** (T-028, #12) — `transforms: { pre?, post? }` on `renderToString` and
+  all adapters: the canonical place for the HTML-processing glue every integration wraps around the render
+  (strip cloaking, extract config / inline sprites, stamp `<html data-ssr>`). Each transform is
+  `(html, ctx) => string | Promise<string>`, run in array order — `pre` once on the input before component
+  rendering, `post` once on the final output. `ctx` is shared per render; the renderer sets `ctx.tags`
+  (`resolved`/`unresolved`/`excluded`/`failed`) before the first `post` transform. Loud by design: a
+  throwing transform, a non-string return, or a typo'd key fails the render instead of silently doing
+  nothing.
 
 ### Changed
 

@@ -21,6 +21,15 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-09-01 — Page-level transform pipeline (T-028, issue #12)
+
+**Tasks:** T-028
+
+- Fixed GH issue #12: `transforms: { pre?, post? }` on `renderToString` and all six adapters — the canonical shape for the page-level HTML glue every integration wraps around the render (strip cloaking, extract config, inline sprites, stamp markers). Transform = `(html, ctx) => string | Promise<string>`, array order, single function also accepted; `pre` once before the fixpoint, `post` once on the converged output.
+- `ctx` shared per render; the renderer sets `ctx.tags = { resolved, unresolved, excluded, failed }` before the first `post` transform — the issue's "renderer could expose its own info", shipped directly.
+- Loud by design: throwing transform fails the render; non-string return throws naming the transform; unknown keys (typo'd `posts`) throw. String in/string out, no AST promise.
+- Adapter forwarding is the real payoff — consumers don't control the render call site there. +8 tests (suite at 135); docs: API `transforms` section + options/adapter signatures.
+
 ## 2026-09-01 — `lockdownFetch`: opt-in network egress lockdown (T-027, issue #11)
 
 **Tasks:** T-027
