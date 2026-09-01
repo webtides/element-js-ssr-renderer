@@ -18,6 +18,13 @@ bumps may contain behavior changes).
   lang-dependent components (`Intl` formatting, i18n lookups) render the page's language instead of the
   shim's `'en'` default. No new option: an input without the attribute keeps the current value (pre-set it
   to define your own default), and a real DOM's document is never touched.
+- **`lockdownFetch` — opt-in network egress lockdown** (T-027, #11) — exported from
+  `…/dom-shim`: locks the global `fetch` down to an origin allowlist (`lockdownFetch()` blocks everything,
+  `{ allowOrigins }` opens exceptions), before any request leaves the process. Blocked calls reject fast
+  with `code: "SSR_FETCH_BLOCKED"` on a pre-handled promise (fire-and-forget fetches never surface as
+  unhandled rejections); relative URLs are blocked; each blocked origin warns once by default
+  (`onBlocked(origin, url)` to override). Repeated calls replace the policy; the returned function restores
+  the previous `fetch`. Deliberately opt-in — importing the dom-shim alone changes nothing.
 
 ### Changed
 

@@ -217,12 +217,52 @@ are emitted as `Store/<key>` references and a shared store is serialized once. R
 [Astro](/frameworks/astro), [Nuxt](/frameworks/nuxt) and [SvelteKit](/frameworks/sveltekit) `elementSSR`
 adapters.
 
+## `lockdownFetch(options?)`
+
+```ts
+import { lockdownFetch } from "@webtides/element-js-ssr-renderer/dom-shim";
+
+function lockdownFetch(options?: {
+  allowOrigins?: string[];
+  onBlocked?: (origin: string, url: string) => void;
+}): () => void; // restores the previous fetch
+```
+
+Opt-in network egress lockdown for SSR. Component code written for the browser does fetch things — data,
+sprites, third-party endpoints — and on the server each such call is wasted latency inside the render path
+at best and an **SSRF surface** at worst: the render service typically runs inside the network perimeter,
+so a component fetching a URL derived from page content can reach things a browser never could.
+
+```js
+import { lockdownFetch } from "@webtides/element-js-ssr-renderer/dom-shim";
+
+lockdownFetch(); // block everything — a render pass shouldn't do network I/O
+lockdownFetch({ allowOrigins: ["http://localhost:8080"] }); // …with deliberate exceptions
+```
+
+- Blocking happens **before** the real `fetch` — no request, DNS lookup or socket leaves the process.
+- A blocked call rejects fast with an `Error` carrying `code: "SSR_FETCH_BLOCKED"`. The promise is
+  pre-handled, so fire-and-forget fetches from module scope or constructors never surface as unhandled
+  rejections — code that `await`s still sees the rejection. (A module-scope `await fetch(…)` that fails at
+  import time lands in [resolver failure isolation](#onerror): the tag is left untouched, the page renders.)
+- Relative URLs are blocked too — the shim has no base origin, so they could never mean what the component
+  thinks. `allowOrigins` entries are normalized via `new URL(entry).origin` (a full URL is fine); an invalid
+  entry throws at setup.
+- Each blocked origin is reported once via `console.warn` by default — not dev-gated, for the same reason as
+  [`onError`](#onerror). Pass `onBlocked(origin, url)` to route or silence it.
+- Calling `lockdownFetch` again **replaces** the active policy (wrappers never stack); the returned function
+  restores the `fetch` that was active before the call.
+
+It is deliberately **opt-in** and unrelated to importing the dom-shim itself — `fetch` is a real, working
+Node global, and replacing it is a policy decision the consumer makes explicitly, typically once in the
+server entry right after the shim import.
+
 ## Subpath exports
 
 | Import                                        | Exports                                                                  |
 | --------------------------------------------- | ------------------------------------------------------------------------ |
 | `@webtides/element-js-ssr-renderer`           | `renderToString`, `glob`                                                 |
-| `@webtides/element-js-ssr-renderer/dom-shim`  | DOM globals shim (side-effect import)                                    |
+| `@webtides/element-js-ssr-renderer/dom-shim`  | DOM globals shim (side-effect import); `lockdownFetch`                   |
 | `@webtides/element-js-ssr-renderer/astro`     | `elementSSR` (Astro middleware)                                          |
 | `@webtides/element-js-ssr-renderer/nuxt`      | `elementSSR` (Nitro `render:response` handler)                           |
 | `@webtides/element-js-ssr-renderer/sveltekit` | `elementSSR` (SvelteKit `handle` hook)                                   |

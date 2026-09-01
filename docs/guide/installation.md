@@ -44,6 +44,11 @@ reading it — `Intl` formatting, i18n lookups — render the page's language in
 An input without the attribute keeps the current value; set `document.documentElement.lang` yourself before
 rendering to define your own default.
 
+The shim never touches `fetch` — it is a real, working Node global. To stop component code from reaching
+the network during SSR (latency in the render path, SSRF), opt into
+[`lockdownFetch`](/api/#lockdownfetch-options): typically one call in the server entry, right after the
+shim import.
+
 ## On the client
 
 The renderer only produces markup. To make the pre-rendered elements upgrade and **hydrate**, import the

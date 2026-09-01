@@ -21,7 +21,9 @@
  * empty/neutral values) and guarded, so environments that bring a real DOM (browsers, happy-dom,
  * jsdom) are never touched.
  *
- * Importing this module is a one-time, idempotent side effect.
+ * Importing this module is a one-time, idempotent side effect. The one export, `lockdownFetch`,
+ * does nothing until explicitly called — it is the opt-in tool for locking network egress down
+ * during SSR (T-027).
  */
 
 if (typeof globalThis.HTMLElement === "undefined") {
@@ -220,3 +222,103 @@ globalThis.dispatchEvent ??= () => true;
 // This makes `typeof window !== "undefined"` checks take the browser path — which is the point:
 // that path then lands on the inert stubs instead of a ReferenceError.
 globalThis.window ??= globalThis;
+
+// ---------------------------------------------------------------------------------------------
+// Opt-in network egress lockdown (T-027) — unlike everything above, NOT installed by importing
+// this module: `fetch` is a real, working Node global, and replacing it is a policy decision the
+// consumer makes explicitly.
+// ---------------------------------------------------------------------------------------------
+
+/** The URL string of a `fetch` input — a string, a `URL`, or a `Request`(-like) with a `.url`. */
+function urlOf(input) {
+  return typeof input === "object" && input !== null && "url" in input
+    ? String(input.url)
+    : String(input);
+}
+
+let activeRestore; // the current lockdown's restore, so a repeated call replaces instead of stacking
+
+/**
+ * Lock the global `fetch` down to an origin allowlist (T-027). Component code written for the
+ * browser does fetch things — data in `connected()`, sprites, third-party endpoints — and on the
+ * server each such call is wasted latency inside the render path at best and an SSRF surface at
+ * worst: the render service typically runs inside the network perimeter, so a component fetching
+ * a URL derived from page content can reach things a browser never could. A deterministic render
+ * pass shouldn't be doing network I/O at all, so `lockdownFetch()` with no arguments blocks
+ * everything; `allowOrigins` opens deliberate exceptions.
+ *
+ * A blocked call rejects fast with an `Error` carrying `code: "SSR_FETCH_BLOCKED"` — but the
+ * returned promise is pre-handled, so the fire-and-forget fetches components issue at module
+ * scope or in constructors never surface as unhandled rejections; code that does `await` the call
+ * still sees the rejection. Relative URLs are blocked as well: the shim has no base origin, so
+ * they could never mean what the component thinks. Blocking happens before the real `fetch`, so
+ * no request, DNS lookup or socket ever leaves the process.
+ *
+ * By default each blocked origin is reported once via `console.warn` — not dev-gated, since a
+ * component quietly probing the network from the render service is exactly what production logs
+ * should show. Pass `onBlocked` to route or silence it.
+ *
+ * Calling `lockdownFetch` again replaces the active policy (wrappers never stack). The returned
+ * `restore()` puts the previous `fetch` back.
+ *
+ * @param {{ allowOrigins?: string[], onBlocked?: (origin: string, url: string) => void }} [options]
+ *   `allowOrigins` entries are normalized to their origin via `new URL(entry).origin` (a full URL
+ *   is fine); an invalid entry throws immediately — a config typo must fail setup, not renders.
+ *   `onBlocked(origin, url)` observes each blocked call (default: warn once per origin).
+ * @return {() => void} restores the `fetch` that was active before this call
+ */
+export function lockdownFetch({ allowOrigins = [], onBlocked } = {}) {
+  const allowed = new Set(allowOrigins.map((entry) => new URL(entry).origin));
+
+  const warned = new Set();
+  const report =
+    onBlocked ??
+    ((origin) => {
+      if (warned.has(origin)) return;
+      warned.add(origin);
+      console.warn(
+        `[element-js-ssr-renderer] fetch blocked during SSR: ${origin} — components must not ` +
+          `reach the network while rendering (pass it in lockdownFetch({ allowOrigins }) to permit).`,
+      );
+    });
+
+  activeRestore?.();
+  // Kept as the raw reference so `restore()` reinstates exactly what was there; calls go through
+  // `.call(globalThis, …)` since some fetch implementations are receiver-sensitive.
+  const realFetch =
+    typeof globalThis.fetch === "function" ? globalThis.fetch : undefined;
+
+  const wrapper = (input, init) => {
+    const url = urlOf(input);
+    let origin;
+    try {
+      origin = new URL(url).origin;
+    } catch {
+      origin = url; // relative/invalid — can never match a normalized allowlist entry
+    }
+    if (allowed.has(origin)) {
+      if (realFetch) return realFetch.call(globalThis, input, init);
+      return Promise.reject(
+        new TypeError("global fetch is not available in this runtime"),
+      );
+    }
+    report(origin, url);
+    const error = new Error(
+      `[element-js-ssr-renderer] fetch blocked during SSR: ${url}`,
+    );
+    error.code = "SSR_FETCH_BLOCKED";
+    const rejection = Promise.reject(error);
+    // Mark the rejection handled so fire-and-forget calls don't trip unhandled-rejection
+    // handling; every consumer that awaits/chains this promise still receives the error.
+    rejection.catch(() => {});
+    return rejection;
+  };
+
+  globalThis.fetch = wrapper;
+  const restore = () => {
+    if (globalThis.fetch === wrapper) globalThis.fetch = realFetch;
+    if (activeRestore === restore) activeRestore = undefined;
+  };
+  activeRestore = restore;
+  return restore;
+}

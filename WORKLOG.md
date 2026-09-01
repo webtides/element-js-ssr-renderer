@@ -21,6 +21,15 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-09-01 — `lockdownFetch`: opt-in network egress lockdown (T-027, issue #11)
+
+**Tasks:** T-027
+
+- Fixed GH issue #11: `lockdownFetch({ allowOrigins?, onBlocked? })`, exported from `…/dom-shim`, locks global `fetch` to an origin allowlist (no-arg = block everything) before any request leaves the process — SSRF surface and render-path latency from browser-minded component fetches.
+- Beyond the issue: blocked calls reject on a pre-handled promise (`code: "SSR_FETCH_BLOCKED"`), so fire-and-forget fetches never become unhandled rejections while awaiting callers still fail fast; relative URLs blocked; invalid allowlist entries throw at setup; repeated calls replace (never stack); `restore()` returned.
+- Deliberately opt-in (importing the shim alone changes nothing); the issue's "block by default?" question left open for a later, possibly-breaking revisit.
+- +9 tests (suite at 127); docs: API `lockdownFetch` section + subpath table, installation shim section.
+
 ## 2026-09-01 — Adopt `<html lang>` during render (T-026, issue #10)
 
 **Tasks:** T-026
