@@ -8,29 +8,63 @@
   "engines": {
     "node": ">=20.19"
   },
+  "types": "./types/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
-    "./autoloader": "./src/autoloader.js",
-    "./dom-shim": "./src/dom-shim.js",
-    "./astro": "./src/adapters/astro.js",
-    "./eleventy": "./src/adapters/eleventy.js",
-    "./node": "./src/adapters/node.js",
-    "./nuxt": "./src/adapters/nuxt.js",
-    "./sveltekit": "./src/adapters/sveltekit.js",
-    "./vite": "./src/adapters/vite.js",
-    "./generate": "./src/generate-catalog.js"
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./autoloader": {
+      "types": "./types/autoloader.d.ts",
+      "default": "./src/autoloader.js"
+    },
+    "./dom-shim": {
+      "types": "./types/dom-shim.d.ts",
+      "default": "./src/dom-shim.js"
+    },
+    "./astro": {
+      "types": "./types/adapters/astro.d.ts",
+      "default": "./src/adapters/astro.js"
+    },
+    "./eleventy": {
+      "types": "./types/adapters/eleventy.d.ts",
+      "default": "./src/adapters/eleventy.js"
+    },
+    "./node": {
+      "types": "./types/adapters/node.d.ts",
+      "default": "./src/adapters/node.js"
+    },
+    "./nuxt": {
+      "types": "./types/adapters/nuxt.d.ts",
+      "default": "./src/adapters/nuxt.js"
+    },
+    "./sveltekit": {
+      "types": "./types/adapters/sveltekit.d.ts",
+      "default": "./src/adapters/sveltekit.js"
+    },
+    "./vite": {
+      "types": "./types/adapters/vite.d.ts",
+      "default": "./src/adapters/vite.js"
+    },
+    "./generate": {
+      "types": "./types/generate-catalog.d.ts",
+      "default": "./src/generate-catalog.js"
+    }
   },
   "bin": {
     "element-js-ssr-renderer": "./bin/element-js-ssr-renderer.js"
   },
   "files": [
     "src",
-    "bin"
+    "bin",
+    "types"
   ],
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
+    "build:types": "tsc -p tsconfig.json",
+    "prepack": "npm run build:types",
     "prepublishOnly": "npm test",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -48,6 +82,7 @@
     "@webtides/element-js": "^1.2.11",
     "@webtides/element-library": "^0.1.2",
     "happy-dom": "^20.12.0",
+    "typescript": "^6.0.3",
     "vitepress": "^1.6.4",
     "vitest": "^4.0.0"
   }

@@ -4,6 +4,17 @@ All notable changes to `@webtides/element-js-ssr-renderer` are documented here. 
 [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/) (0.x: minor
 bumps may contain behavior changes).
 
+## [Unreleased]
+
+### Added
+
+- **TypeScript declarations** (T-030, #13) — every subpath export now ships a `.d.ts` generated from the
+  source's JSDoc (`types/`, built on `prepack`), wired through `types` conditions in `exports`. Strict
+  consumers (`strict`, `moduleResolution: "bundler"` / `"nodenext"`) no longer hit `TS7016` on
+  `@webtides/element-js-ssr-renderer/sveltekit` and the other adapters, and no longer need an ambient
+  `declare module` workaround. The main entry additionally exports the `Catalog`, `ComponentConfig`,
+  `PropertyProvider`, `PageTransform` and `PageTransformContext` types. No runtime change.
+
 ## [0.4.0] — 2026-09-01
 
 The last two production-integration issues (#7, #8): components get their data before the render, and their

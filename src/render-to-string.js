@@ -789,7 +789,7 @@ function runTransform(
  *   - a value may also be a **{@link ComponentConfig}** — an object wrapping the class or loader
  *     with per-component SSR overrides (injected styles, `adoptGlobalStyles`), detected by its
  *     `component` key.
- * @typedef {Object<string, CustomElementConstructor | (() => Promise<unknown>) | ComponentConfig>} Catalog
+ * @typedef {Record<string, CustomElementConstructor | (() => Promise<unknown>) | ComponentConfig>} Catalog
  */
 
 /**

@@ -21,6 +21,16 @@ Append-only log of significant project changes. **Newest entries at the top.**
 
 ---
 
+## 2026-11-17 — TypeScript declarations for every subpath export (T-030, issue #13)
+
+**Tasks:** T-030
+
+- Fixed GH issue #13: the package shipped no `.d.ts`, so strict TypeScript consumers got `TS7016` (implicit `any`) on every subpath. Declarations are now generated from the JSDoc (`tsc --allowJs --emitDeclarationOnly`, `tsconfig.json` → `types/`), built on `prepack`, shipped via `files`, gitignored (`/types/`, root-anchored — an unanchored `types/` would also swallow `test/fixtures/types/`) — the same mechanics as `@webtides/element-library`. Every `exports` entry is now `{ types, default }`.
+- `src/index.js` re-exports the public option types (`Catalog`, `ComponentConfig`, `PropertyProvider`, `PageTransform`, `PageTransformContext`) via `@typedef`. `Catalog` switched from `Object<string, …>` to `Record<string, …>`: TypeScript 6 still resolves the legacy form, TypeScript 7 emits it verbatim (`TS2315`, silently `any` under `skipLibCheck`).
+- `typescript@^6.0.3` devDependency (parity with element-library; pure JavaScript, no per-platform binaries in the lockfile). Deliberately not done: tightening the SvelteKit adapter's return type to `import('@sveltejs/kit').Handle` — the structural type is assignable to `Handle` in SvelteKit 2 and 3 without a type dependency.
+- +2 tests (`test/types.test.js`, suite at 186): every export pairs with an existing declaration, and a strict consumer fixture (`moduleResolution: bundler`, `skipLibCheck: false`) imports all ten subpaths by package name, with `@ts-expect-error` cases guarding against a silent degrade to `any`. Also verified against the packed tarball in a fresh project (0.4.0 reproduces `TS7016`, the new tarball is clean) and against the `Handle` type of SvelteKit 2.70 and 3.3.
+- Lockfile trap, again (see 2026-09-01): a local `npm install` with npm 11 prunes Vite 8's optional peer `esbuild@0.28.2` from `package-lock.json`, which `npm ci` under npm 10 (Node 22, the CI test job) rejects as out of sync. The `typescript` entry was therefore added to the existing lockfile without re-resolving; both CI jobs were replayed in a `node:22` linux/amd64 container before release.
+
 ## 2026-09-01 — Release 0.4.0
 
 **Tasks:** T-009, T-029

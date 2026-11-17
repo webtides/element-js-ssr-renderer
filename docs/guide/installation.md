@@ -74,3 +74,18 @@ place rather than re-rendering them — no flash of empty/unstyled content.
 
 The package also installs an `element-js-ssr-renderer` CLI (`element-js-ssr-renderer catalog`) for generating
 a static catalog at build time. See the [API reference](/api/) for full signatures.
+
+## TypeScript
+
+The package is plain JavaScript, but every subpath ships type declarations generated from its JSDoc — strict
+projects (`strict`, `moduleResolution: "bundler"` or `"nodenext"`) need no ambient `declare module`. The
+option types are exported from the main entry:
+
+```ts
+import type {
+  Catalog,
+  ComponentConfig,
+  PageTransform,
+  PropertyProvider,
+} from "@webtides/element-js-ssr-renderer";
+```

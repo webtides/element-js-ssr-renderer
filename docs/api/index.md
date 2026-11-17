@@ -475,6 +475,9 @@ The subpath also exports the `Loading` type for typed `static loading` declarati
 | `@webtides/element-js-ssr-renderer/eleventy`   | `elementSSR` (Eleventy transform)                                        |
 | `@webtides/element-js-ssr-renderer/generate`   | `buildCatalog`, `catalogEntriesFromDirectory`, … (build-time, Node-only) |
 
+Every subpath ships TypeScript declarations. The main entry additionally exports the `Catalog`,
+`ComponentConfig`, `PropertyProvider`, `PageTransform` and `PageTransformContext` types.
+
 ## `element-js-ssr-renderer` CLI
 
 A build-time helper that generates a static, bundler-traceable [`Catalog`](#catalog) — the no-hand-writing

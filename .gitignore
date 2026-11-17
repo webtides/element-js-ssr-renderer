@@ -6,6 +6,9 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# Generated TypeScript declarations (built on prepack, shipped via `files`)
+/types/
+
 # VitePress docs site
 docs/.vitepress/dist/
 docs/.vitepress/cache/
