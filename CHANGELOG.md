@@ -4,7 +4,9 @@ All notable changes to `@webtides/element-js-ssr-renderer` are documented here. 
 [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/) (0.x: minor
 bumps may contain behavior changes).
 
-## [Unreleased]
+## [0.4.1] — 2026-11-17
+
+Types for TypeScript consumers (#13). No runtime change.
 
 ### Added
 
@@ -127,6 +129,7 @@ Initial release: `renderToString` (Declarative Shadow DOM, hydration markers, la
 catalogs and resolver functions, `glob` escape hatch, state transport (`serializeState`), dom-shim,
 framework adapters (Astro, Nuxt, SvelteKit, Vite, Eleventy, Node), catalog generator + CLI.
 
+[0.4.1]: https://github.com/webtides/element-js-ssr-renderer/releases/tag/v0.4.1
 [0.4.0]: https://github.com/webtides/element-js-ssr-renderer/releases/tag/v0.4.0
 [0.3.0]: https://github.com/webtides/element-js-ssr-renderer/releases/tag/v0.3.0
 [0.2.0]: https://github.com/webtides/element-js-ssr-renderer/releases/tag/v0.2.0
